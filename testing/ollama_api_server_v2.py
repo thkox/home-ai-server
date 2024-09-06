@@ -44,7 +44,7 @@ def convert_to_base_messages(message_list):
 
 # Function to get session history from SQLite database
 def get_session_history(session_id):
-    return SQLChatMessageHistory(session_id, "sqlite:///memory.db")
+    return SQLChatMessageHistory(session_id, connection="sqlite:///memory.db")
 
 if __name__ == "__main__":
     load_dotenv()  # Load environment variables from .env file
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     # Create a RunnableWithMessageHistory instance
     conversation = RunnableWithMessageHistory(
         runnable=ollama,  # The LLM model
-        get_session_history=lambda session_id: get_session_history(session_id),  # How to retrieve the session history
+        get_session_history=get_session_history,  # How to retrieve the session history
         memory=memory,
         verbose=True
     )
