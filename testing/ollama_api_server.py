@@ -1,26 +1,20 @@
 from langchain_community.chat_models import ChatOllama
+from langchain.memory import ConversationBufferMemory
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain.schema import HumanMessage, AIMessage
+from langchain_community.chat_message_histories import SQLChatMessageHistory
 import os
 from dotenv import load_dotenv
 import requests
-import json
+import sqlite3
+import uuid
 
-
+# Function to extract model names
 def extract_model_names(models_info: list) -> tuple:
     return tuple(model["name"] for model in models_info)
 
-
+# Function to get Ollama models from the API
 def get_ollama_models(ollama_api_base_url: str, token: str = '') -> list:
-    """
-    Retrieves a list of available Ollama models from the given API URL.
-
-    Args:
-        ollama_api_base_url (str): The base URL of the Ollama API.
-        token (str, optional): An optional authentication token for the API. Defaults to ''.
-
-    Returns:
-        list: A list of dictionaries containing model information (id, name).
-            If any errors occur, an empty list will be returned.
-    """
     url = f"{ollama_api_base_url}/api/tags"
     headers = {
         'Accept': 'application/json',
@@ -31,59 +25,40 @@ def get_ollama_models(ollama_api_base_url: str, token: str = '') -> list:
 
     try:
         response = requests.get(url, headers=headers)
-        response.raise_for_status()  # Raise an exception for non-200 status codes
-
+        response.raise_for_status()
         data = response.json()
-        models = data.get('models', [])  # Handle missing 'models' key gracefully
-
-        return [
-            {
-                'id': model.get('model', ''),
-                'name': model.get('name', model.get('model', ''))
-            }
-            for model in models
-        ]
-
+        models = data.get('models', [])
+        return [{'id': model.get('model', ''), 'name': model.get('name', model.get('model', ''))} for model in models]
     except requests.exceptions.RequestException as e:
         print(f"Error retrieving Ollama models: {e}")
-        return []  # Return an empty list on errors
+        return []
 
-# TODO: Fix this function
-def pull_model(ollama_api_base_url: str, model_name: str, token: str = '') -> bool:
-    """
-    It does not work!
+# Function to convert list of dictionaries to BaseMessage objects
+def convert_to_base_messages(message_list):
+    converted_messages = []
+    for message in message_list:
+        if message['role'] == 'user':
+            converted_messages.append(HumanMessage(content=message['content']))
+        elif message['role'] == 'llm':
+            converted_messages.append(AIMessage(content=message['content']))
+    return converted_messages
 
-    Pulls a model from the Ollama API if it does not exist.
+# Function to get session history from SQLite database
+def get_session_history(session_id):
+    return SQLChatMessageHistory(session_id, connection="sqlite:///memory.db")
 
-    Args:
-        ollama_api_base_url (str): The base URL of the Ollama API.
-        model_name (str): The name of the model to pull.
-        token (str, optional): An optional authentication token for the API. Defaults to ''.
+# Function to generate a unique session ID
+def generate_session_id():
+    return str(uuid.uuid4())
 
-    Returns:
-        bool: True if the model was pulled successfully, False otherwise.
-    """
-    url = f"{ollama_api_base_url}/api/models/pull"
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-    }
-    if token:
-        headers['Authorization'] = f'Bearer {token}'
-
-    payload = json.dumps({"model": model_name})
-
-    try:
-        response = requests.post(url, headers=headers, data=payload)
-        response.raise_for_status()  # Raise an exception for non-200 status codes
-
-        # Assuming that a successful response indicates that the model is being pulled.
-        print(f"Model '{model_name}' is being pulled.")
-        return True
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error pulling model '{model_name}': {e}")
-        return False
+# Function to retrieve all session IDs from the SQLite database
+def list_all_sessions():
+    conn = sqlite3.connect("memory.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT session_id FROM message_store")
+    sessions = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return sessions
 
 if __name__ == "__main__":
     load_dotenv()  # Load environment variables from .env file
@@ -96,29 +71,78 @@ if __name__ == "__main__":
         raise ValueError("Please set the OLLAMA_URL environment variable in your .env file")
 
     models = get_ollama_models(ollama_url, ollama_key)
-
-    # Extract available model names from the API response
     available_model_names = extract_model_names(models)
 
-    print("Available models:", available_model_names)  # Debugging line
+    print("Available models:", available_model_names)
 
     if model_name not in available_model_names:
         print(f"Model '{model_name}' not found in the available models.")
-
-        # # Try to pull the model if it does not exist
-        # pull_success = pull_model(ollama_url, model_name, ollama_key)
-        # if not pull_success:
-        #     raise ValueError(f"Failed to pull model '{model_name}'. Please check the model name or network connection.")
-        #
-        # print(f"Model '{model_name}' is being pulled successfully. Re-run the script after the model is pulled.")
-        # return
-
-    print(f"Model '{model_name}' found, proceeding with initialization...")
+    else:
+        print(f"Model '{model_name}' found, proceeding with initialization...")
 
     # Initialize ChatOllama with the selected model
-    ollama = ChatOllama(
-        base_url=ollama_url,
-        model=model_name
+    ollama = ChatOllama(base_url=ollama_url, model=model_name)
+
+    # Initialize conversation memory
+    memory = ConversationBufferMemory(return_messages=True)
+
+    # Create a session ID for the current conversation
+    current_session_id = generate_session_id()
+
+    # Create a RunnableWithMessageHistory instance
+    conversation = RunnableWithMessageHistory(
+        runnable=ollama,  # The LLM model
+        get_session_history=lambda: get_session_history(current_session_id),  # How to retrieve the session history
+        memory=memory,
+        verbose=True
     )
 
-    print(ollama.invoke("Why is the sky blue?"))
+    # User interaction loop
+    while True:
+        user_message = input("You: ")
+
+        if user_message.lower() in ["exit", "quit"]:
+            print("Ending the conversation.")
+            break
+        elif user_message.lower() == "new":
+            # Start a new conversation
+            print("Starting a new conversation.")
+            memory = ConversationBufferMemory(return_messages=True)
+            current_session_id = generate_session_id()
+            conversation = RunnableWithMessageHistory(
+                runnable=ollama,
+                get_session_history=lambda: get_session_history(current_session_id),
+                memory=memory,
+                verbose=True
+            )
+            continue
+        elif user_message.lower().startswith("resume"):
+            # List all available sessions from the database
+            sessions = list_all_sessions()
+            if sessions:
+                print("Available sessions:")
+                for session_id in sessions:
+                    print(f"- {session_id}")
+
+                session_id_to_resume = input("Enter session ID to resume: ").strip()
+
+                if session_id_to_resume in sessions:
+                    # Resume the selected session
+                    print(f"Resuming session {session_id_to_resume}")
+                    current_session_id = session_id_to_resume
+                    memory = ConversationBufferMemory(return_messages=True)
+                    conversation = RunnableWithMessageHistory(
+                        runnable=ollama,
+                        get_session_history=lambda: get_session_history(current_session_id),
+                        memory=memory,
+                        verbose=True
+                    )
+                else:
+                    print("Invalid session ID.")
+            else:
+                print("No previous sessions available to resume.")
+            continue
+
+        # Generate LLM response with memory
+        llm_response = conversation.invoke(input=user_message, config={"configurable": {"session_id": current_session_id}})
+        print(f"LLM: {llm_response}")
