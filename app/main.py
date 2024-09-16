@@ -41,7 +41,14 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return new_user
+    return schemas.UserOut(
+        user_id=str(new_user.user_id),
+        first_name=new_user.first_name,
+        last_name=new_user.last_name,
+        email=new_user.email,
+        enabled=new_user.enabled,
+        role=new_user.role
+    )
 
 @app.put("/users/me", response_model=schemas.UserOut)
 def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -52,13 +59,26 @@ def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db), c
         current_user.hashed_password = auth.get_password_hash(user.password)
     db.commit()
     db.refresh(current_user)
-    return current_user
+    return schemas.UserOut(
+        user_id=str(current_user.user_id),
+        first_name=current_user.first_name,
+        last_name=current_user.last_name,
+        email=current_user.email,
+        enabled=current_user.enabled,
+        role=current_user.role
+    )
 
 @app.put("/users/{user_id}", response_model=schemas.UserOut)
 def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
     db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if the new email already exists in the database
+    if db_user.email != user.email:
+        email_exists = db.query(models.User).filter(models.User.email == user.email).first()
+        if email_exists:
+            raise HTTPException(status_code=400, detail="Email already registered")
 
     db_user.first_name = user.first_name
     db_user.last_name = user.last_name
@@ -67,4 +87,11 @@ def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends
         db_user.hashed_password = auth.get_password_hash(user.password)
     db.commit()
     db.refresh(db_user)
-    return db_user
+    return schemas.UserOut(
+        user_id=str(db_user.user_id),
+        first_name=db_user.first_name,
+        last_name=db_user.last_name,
+        email=db_user.email,
+        enabled=db_user.enabled,
+        role=db_user.role
+    )
