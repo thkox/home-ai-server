@@ -1,5 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
+from uuid import UUID
 
 class UserBase(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=50, pattern=r'^[a-zA-Z]+$')
@@ -41,3 +43,28 @@ class TokenData(BaseModel):
     user_id: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+
+class ConversationCreate(BaseModel):
+    user_id: str
+
+class ConversationOut(BaseModel):
+    id: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    summary: Optional[str] = None
+    status: str
+    user_id: str
+
+    class Config:
+        orm_mode = True
+
+    @field_validator('id', 'user_id', mode='before')
+    def convert_uuid_to_str(cls, value):
+        if isinstance(value, UUID):
+            return str(value)
+        return value
+
+class MessageOut(BaseModel):
+    sender_id: Optional[str]
+    content: str
+    timestamp: datetime
