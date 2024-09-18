@@ -25,13 +25,14 @@ def create_db_if_not_exists():
     cur = conn.cursor()
     cur.execute(f"SELECT 1 FROM pg_database WHERE datname = '{DATABASE_NAME}';")
     if not cur.fetchone():
-        cur.execute(f'CREATE DATABASE {DATABASE_NAME};')
+        # Use template0 to avoid encoding conflict with template1 (SQL_ASCII)
+        cur.execute(f"CREATE DATABASE {DATABASE_NAME} WITH ENCODING 'UTF8' TEMPLATE template0;")
     conn.close()
 
 create_db_if_not_exists()
 
-# SQLAlchemy DB Connection
-SQLALCHEMY_DATABASE_URL = f"postgresql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_URL}/{DATABASE_NAME}"
+# SQLAlchemy DB Connection with UTF-8 encoding
+SQLALCHEMY_DATABASE_URL = f"postgresql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_URL}/{DATABASE_NAME}?client_encoding=utf8"
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
