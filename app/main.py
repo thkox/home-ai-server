@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from . import models, schemas, auth
+from . import models, schemas, auth, conversations
 from .database import engine, get_db
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
@@ -95,3 +95,19 @@ def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends
         enabled=db_user.enabled,
         role=db_user.role
     )
+
+# Start a new conversation
+@app.post("/conversations/", response_model=schemas.ConversationOut)
+def start_conversation(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    new_convo = conversations.create_new_conversation(db, user_id=str(current_user.user_id))
+    return new_convo
+
+# Continue a conversation
+@app.post("/conversations/{conversation_id}/continue")
+def continue_existing_conversation(conversation_id: str, message: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return conversations.continue_conversation(db, conversation_id, user_id=str(current_user.user_id), message_content=message)
+
+# Delete a conversation
+@app.delete("/conversations/{conversation_id}")
+def delete_conversation(conversation_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return conversations.delete_conversation(db, conversation_id, user_id=str(current_user.user_id))
