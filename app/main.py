@@ -1,13 +1,34 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from . import models, schemas, auth, conversations
-from .database import engine, get_db
-from fastapi.security import OAuth2PasswordRequestForm
+from contextlib import asynccontextmanager
 from datetime import timedelta
+
+from fastapi import Depends, HTTPException, status
+from fastapi import FastAPI
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+
+from . import models, schemas, auth, conversations
+from .database import engine
+from .database import get_db
+from .models import User, UserRole
+from .utils import ensure_assistant_user_exists
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Logic for startup (before yield)
+    db = next(get_db())
+    ensure_assistant_user_exists(db, User, UserRole)
+
+    yield  # Here is where FastAPI handles the requests
+
+    # Logic for shutdown (after yield)
+    db.close()
+
+
+app = FastAPI(lifespan=lifespan)
+
 
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
@@ -20,17 +41,19 @@ def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2Passw
         )
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        data={"sub": user.email, "user_id": str(user.user_id), "first_name": user.first_name, "last_name": user.last_name},
+        data={"sub": user.email, "user_id": str(user.user_id), "first_name": user.first_name,
+              "last_name": user.last_name},
         expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
 
 @app.post("/users/", response_model=schemas.UserOut)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     hashed_password = auth.get_password_hash(user.password)
     new_user = models.User(
         first_name=user.first_name,
@@ -50,8 +73,10 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         role=new_user.role
     )
 
+
 @app.put("/users/me", response_model=schemas.UserOut)
-def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db),
+                      current_user: models.User = Depends(auth.get_current_user)):
     current_user.first_name = user.first_name
     current_user.last_name = user.last_name
     current_user.email = user.email
@@ -68,8 +93,10 @@ def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db), c
         role=current_user.role
     )
 
+
 @app.put("/users/{user_id}", response_model=schemas.UserOut)
-def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends(get_db),
+                   current_user: models.User = Depends(auth.get_current_admin_user)):
     db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -96,18 +123,37 @@ def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends
         role=db_user.role
     )
 
+
 # Start a new conversation
 @app.post("/conversations/", response_model=schemas.ConversationOut)
 def start_conversation(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     new_convo = conversations.create_new_conversation(db, user_id=str(current_user.user_id))
     return new_convo
 
+
 # Continue a conversation
 @app.post("/conversations/{conversation_id}/continue")
-def continue_existing_conversation(conversation_id: str, message: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    return conversations.continue_conversation(db, conversation_id, user_id=str(current_user.user_id), message_content=message)
+def continue_existing_conversation(conversation_id: str, message: str, db: Session = Depends(get_db),
+                                   current_user: models.User = Depends(auth.get_current_user)):
+    return conversations.continue_conversation(db, conversation_id, user_id=str(current_user.user_id),
+                                               message_content=message)
+
 
 # Delete a conversation
 @app.delete("/conversations/{conversation_id}")
-def delete_conversation(conversation_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    return conversations.delete_conversation(db, conversation_id, user_id=str(current_user.user_id))
+def delete_conversation(conversation_id: str, db: Session = Depends(get_db),
+                        current_user: models.User = Depends(auth.get_current_user)):
+    conversation = db.query(models.Conversation).filter(
+        models.Conversation.id == conversation_id,
+        models.Conversation.user_id == current_user.user_id
+    ).first()
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Delete related messages first to avoid foreign key constraint issues
+    db.query(models.Message).filter(models.Message.conversation_id == conversation_id).delete()
+
+    db.delete(conversation)
+    db.commit()
+    return {"message": "Conversation and related messages deleted successfully"}
