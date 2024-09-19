@@ -1,12 +1,11 @@
 import os
+
+from fastapi import HTTPException
 from langchain_community.llms.ollama import Ollama
 from sqlalchemy.orm import Session
+
 from .models import Conversation, Message
-from .schemas import ConversationCreate, ConversationOut
-from .auth import get_current_user
-from fastapi import Depends, HTTPException, status
-from .database import get_db
-from langchain.chains import ConversationChain
+from .utils import ASSISTANT_UUID
 
 OLLAMA_URL = os.getenv("OLLAMA_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
@@ -44,7 +43,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
 
     # Log both user and LLM message to the DB
     new_message = Message(
-        conversation_id=conversation_id,
+        conversation_id=conversation_id,  # Ensure conversation_id is set
         sender_id=user_id,
         content=message_content,
         llm_model=MODEL_NAME,
@@ -54,8 +53,8 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
 
     # LLM response message (serialized as text)
     llm_message = Message(
-        conversation_id=conversation_id,
-        sender_id=None,  # No sender for LLM, it's system-generated
+        conversation_id=conversation_id,  # Ensure conversation_id is set
+        sender_id=ASSISTANT_UUID,  # Set the sender as the Assistant
         content=response_text,  # Store the serialized text response
         llm_model=MODEL_NAME,
         response_time=2.0
