@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import List
 
 from fastapi import Depends, HTTPException, status
 from fastapi import FastAPI
@@ -157,3 +158,16 @@ def delete_conversation(conversation_id: str, db: Session = Depends(get_db),
     db.delete(conversation)
     db.commit()
     return {"message": "Conversation and related messages deleted successfully"}
+
+
+@app.get("/conversations/me", response_model=List[schemas.ConversationOut])
+def get_user_conversations(
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(auth.get_current_user)
+):
+    user_conversations = db.query(models.Conversation).filter(
+        models.Conversation.user_id == current_user.user_id
+    ).all()
+
+    return user_conversations
+
