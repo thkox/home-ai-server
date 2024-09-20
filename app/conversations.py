@@ -94,7 +94,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
 
     # Generate response
     try:
-        response = conversation_chain.invoke({"history": memory.load_memory_variables({})['history'], "input": message_content})
+        response = conversation_chain.invoke({"history": memory.buffer, "input": message_content})
         response_text = response["response"]
     except Exception as e:
         logger.error(f"Failed to generate AI response: {e}")
