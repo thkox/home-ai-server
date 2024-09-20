@@ -4,6 +4,7 @@ from typing import List
 
 from fastapi import Depends, HTTPException, status
 from fastapi import FastAPI
+from fastapi import UploadFile, File
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -132,6 +133,7 @@ def start_conversation(db: Session = Depends(get_db), current_user: models.User 
     return new_convo
 
 
+
 # Continue a conversation
 @app.post("/conversations/{conversation_id}/continue")
 def continue_existing_conversation(conversation_id: str, message: str, db: Session = Depends(get_db),
@@ -139,6 +141,20 @@ def continue_existing_conversation(conversation_id: str, message: str, db: Sessi
     return conversations.continue_conversation(db, conversation_id, user_id=str(current_user.user_id),
                                                message_content=message)
 
+
+@app.post("/conversations/{conversation_id}/upload")
+def upload_documents(
+    conversation_id: str,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    return conversations.upload_documents(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=str(current_user.user_id),
+        files=files
+    )
 
 # Delete a conversation
 @app.delete("/conversations/{conversation_id}")
