@@ -56,7 +56,7 @@ class ConversationOut(BaseModel):
     user_id: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
     @field_validator('id', 'user_id', mode='before')
     def convert_uuid_to_str(cls, value):
