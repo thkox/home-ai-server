@@ -23,7 +23,7 @@ class User(Base):
     enabled = Column(Boolean, default=True)
 
     conversations = relationship("Conversation", back_populates="user")
-    # documents = relationship("Document", back_populates="user")
+    documents = relationship("Document", back_populates="user")
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -37,6 +37,8 @@ class Conversation(Base):
 
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation")
+    documents = relationship("Document", back_populates="conversation")
+
 
 class Message(Base):
     __tablename__ = "messages"
@@ -50,3 +52,15 @@ class Message(Base):
     timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     conversation = relationship("Conversation", back_populates="messages")
+
+class Document(Base):
+    __tablename__ = "documents"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey('conversations.id'), nullable=True)
+    file_name = Column(String, nullable=False)
+    file_url = Column(String, nullable=True)  # Update if storing the file path or URL
+    upload_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    user = relationship("User", back_populates="documents")
+    conversation = relationship("Conversation", back_populates="documents")
