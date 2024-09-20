@@ -68,3 +68,12 @@ class MessageOut(BaseModel):
     sender_id: Optional[str]
     content: str
     timestamp: datetime
+
+class DocumentOut(BaseModel):
+    id: str
+    file_name: str
+    upload_time: datetime
+    conversation_id: Optional[str] = None
+
+    class Config:
+        from_attributes = True
