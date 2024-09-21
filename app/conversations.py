@@ -2,6 +2,7 @@ import datetime
 import os
 import logging
 from fastapi import HTTPException
+from langchain.chains.llm import LLMChain
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.llms.ollama import Ollama
 from langchain_core.prompts.chat import PromptTemplate
@@ -37,7 +38,7 @@ ollama_client = Ollama(
 )
 
 TEMPLATE = """
-You are Home AI. Your job is to assist house members with their daily tasks. You can speak multiple languages.
+You are Home AI. Your job is to assist house members with their daily tasks. You can speak multiple languages, but your native is english.
 Use the following documents, if they exist, to answer the question.
 
 Documents:
@@ -55,7 +56,7 @@ PROMPT_TEMPLATE = PromptTemplate(
 )
 
 SIMPLE_TEMPLATE = """
-You are Home AI. Your job is to assist house members with their daily tasks.
+You are Home AI. Your job is to assist house members with their daily tasks. You can speak multiple languages, but your native is english.
 
 Current conversation:
 {chat_history}
