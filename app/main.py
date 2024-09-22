@@ -1,10 +1,9 @@
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import List
+from typing import List, Optional
 
 from fastapi import Depends, HTTPException, status
-from fastapi import FastAPI
-from fastapi import UploadFile, File
+from fastapi import FastAPI, UploadFile, File
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -15,7 +14,6 @@ from .models import User, UserRole
 from .utils import ensure_assistant_user_exists
 
 models.Base.metadata.create_all(bind=engine)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,9 +26,7 @@ async def lifespan(app: FastAPI):
     # Logic for shutdown (after yield)
     db.close()
 
-
 app = FastAPI(lifespan=lifespan)
-
 
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
@@ -48,7 +44,6 @@ def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2Passw
         expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
-
 
 @app.post("/users/", response_model=schemas.UserOut)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -75,7 +70,6 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         role=new_user.role
     )
 
-
 @app.put("/users/me", response_model=schemas.UserOut)
 def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db),
                       current_user: models.User = Depends(auth.get_current_user)):
@@ -94,7 +88,6 @@ def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db),
         enabled=current_user.enabled,
         role=current_user.role
     )
-
 
 @app.put("/users/{user_id}", response_model=schemas.UserOut)
 def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends(get_db),
@@ -125,22 +118,29 @@ def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends
         role=db_user.role
     )
 
-
 # Start a new conversation
 @app.post("/conversations/", response_model=schemas.ConversationOut)
 def start_conversation(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     new_convo = conversations.create_new_conversation(db, user_id=str(current_user.user_id))
     return new_convo
 
-
-
 # Continue a conversation
 @app.post("/conversations/{conversation_id}/continue")
-def continue_existing_conversation(conversation_id: str, message: str, db: Session = Depends(get_db),
-                                   current_user: models.User = Depends(auth.get_current_user)):
-    return conversations.continue_conversation(db, conversation_id, user_id=str(current_user.user_id),
-                                               message_content=message)
-
+def continue_existing_conversation(
+    conversation_id: str,
+    message: str,
+    selected_documents: Optional[List[str]] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    response = conversations.continue_conversation(
+        db,
+        conversation_id,
+        user_id=str(current_user.user_id),
+        message_content=message,
+        selected_documents=selected_documents
+    )
+    return response
 
 @app.post("/conversations/{conversation_id}/upload")
 def upload_documents(
@@ -156,34 +156,35 @@ def upload_documents(
         files=files
     )
 
+@app.delete("/documents/{document_id}")
+def delete_user_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    return conversations.delete_document(db, document_id, user_id=str(current_user.user_id))
+
+@app.get("/documents/me", response_model=List[schemas.DocumentOut])
+def get_user_documents(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    documents = conversations.list_user_documents(db, user_id=str(current_user.user_id))
+    return documents
+
 # Delete a conversation
 @app.delete("/conversations/{conversation_id}")
 def delete_conversation(conversation_id: str, db: Session = Depends(get_db),
                         current_user: models.User = Depends(auth.get_current_user)):
-    conversation = db.query(models.Conversation).filter(
-        models.Conversation.id == conversation_id,
-        models.Conversation.user_id == current_user.user_id
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    # Delete related messages first to avoid foreign key constraint issues
-    db.query(models.Message).filter(models.Message.conversation_id == conversation_id).delete()
-
-    db.delete(conversation)
-    db.commit()
-    return {"message": "Conversation and related messages deleted successfully"}
-
+    return conversations.delete_conversation(db, conversation_id, user_id=str(current_user.user_id))
 
 @app.get("/conversations/me", response_model=List[schemas.ConversationOut])
 def get_user_conversations(
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(auth.get_current_user)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
 ):
     user_conversations = db.query(models.Conversation).filter(
         models.Conversation.user_id == current_user.user_id
     ).all()
 
     return user_conversations
-
