@@ -51,7 +51,7 @@ class ConversationOut(BaseModel):
     id: str
     start_time: datetime
     end_time: Optional[datetime] = None
-    summary: Optional[str] = None
+    title: Optional[str] = None
     status: str
     user_id: str
 
@@ -68,6 +68,8 @@ class MessageOut(BaseModel):
     sender_id: Optional[str]
     content: str
     timestamp: datetime
+    tokens_generated: int
+    response_time: float
 
 class DocumentOut(BaseModel):
     id: str
@@ -77,3 +79,9 @@ class DocumentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @field_validator('id', 'conversation_id', mode='before')
+    def convert_uuid_to_str(cls, value):
+        if isinstance(value, UUID):
+            return str(value)
+        return value
