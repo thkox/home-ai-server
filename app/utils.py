@@ -2,6 +2,7 @@ import uuid
 
 ASSISTANT_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
+
 def ensure_assistant_user_exists(db, User, UserRole):
     assistant_user = db.query(User).filter(User.user_id == ASSISTANT_UUID).first()
     if not assistant_user:

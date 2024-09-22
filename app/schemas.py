@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
 
 class UserBase(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=50, pattern=r'^[a-zA-Z]+$')
@@ -15,6 +17,7 @@ class UserBase(BaseModel):
         if not value.isalpha():
             raise ValueError('Names must contain only alphabetic characters.')
         return value
+
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=50)
@@ -31,21 +34,26 @@ class UserCreate(UserBase):
             raise ValueError('Password must contain at least one special character.')
         return password
 
+
 class UserOut(UserBase):
     user_id: str
     role: str
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
 
+
 class ConversationCreate(BaseModel):
     user_id: str
+
 
 class ConversationOut(BaseModel):
     id: str
@@ -64,12 +72,14 @@ class ConversationOut(BaseModel):
             return str(value)
         return value
 
+
 class MessageOut(BaseModel):
     sender_id: Optional[str]
     content: str
     timestamp: datetime
     tokens_generated: int
     response_time: float
+
 
 class DocumentOut(BaseModel):
     id: str

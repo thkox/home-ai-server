@@ -1,14 +1,18 @@
+import datetime
+import enum
 import uuid
+
 from sqlalchemy import Column, Integer, String, Boolean, Enum, ForeignKey, DateTime, Text, Float
 from sqlalchemy.dialects.postgresql import UUID
-from .database import Base
-import enum
 from sqlalchemy.orm import relationship
-import datetime
+
+from .database import Base
+
 
 class UserRole(str, enum.Enum):
     admin = "admin"
     house_member = "house_member"
+
 
 class User(Base):
     __tablename__ = "users"
@@ -25,6 +29,7 @@ class User(Base):
     conversations = relationship("Conversation", back_populates="user")
     documents = relationship("Document", back_populates="user")
 
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
@@ -39,6 +44,7 @@ class Conversation(Base):
     messages = relationship("Message", back_populates="conversation")
     documents = relationship("Document", back_populates="conversation")
 
+
 class Message(Base):
     __tablename__ = "messages"
 
@@ -52,6 +58,7 @@ class Message(Base):
     timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     conversation = relationship("Conversation", back_populates="messages")
+
 
 class Document(Base):
     __tablename__ = "documents"

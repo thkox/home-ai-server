@@ -1,16 +1,18 @@
-import os
 import logging
-from fastapi import HTTPException
+import os
 from typing import List
-from langchain_community.embeddings import OllamaEmbeddings
-from langchain_chroma import Chroma
+
+from fastapi import HTTPException
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
 from langchain_community.document_loaders import (
     TextLoader,
     PyPDFLoader,
     UnstructuredWordDocumentLoader,
     CSVLoader
 )
+from langchain_community.embeddings import OllamaEmbeddings
+
 from .models import Document
 
 # Configure logging
@@ -21,6 +23,7 @@ CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "./chroma_d
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 DOCUMENTS_DIRECTORY = "./documents"
+
 
 def process_and_store_documents(documents: List[Document], user_id: str):
     # Initialize embedding model

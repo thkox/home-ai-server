@@ -70,6 +70,7 @@ SIMPLE_PROMPT_TEMPLATE = PromptTemplate(
     template=SIMPLE_TEMPLATE
 )
 
+
 def upload_documents(db: Session, conversation_id: str, user_id: str, files: List[UploadFile]):
     """
     Handles document uploads during a conversation.
@@ -124,6 +125,7 @@ def upload_documents(db: Session, conversation_id: str, user_id: str, files: Lis
 
     return {"message": "Documents uploaded and processed successfully."}
 
+
 def delete_document(db: Session, document_id: str, user_id: str):
     """
     Deletes a document from storage and ChromaDB
@@ -168,17 +170,20 @@ def delete_document(db: Session, document_id: str, user_id: str):
 
     return {"message": "Document deleted successfully."}
 
+
 def list_user_documents(db: Session, user_id: str):
     documents = db.query(Document).filter(
         Document.user_id == user_id
     ).all()
     return documents
 
+
 def create_ollama_client():
     return Ollama(
         base_url=OLLAMA_URL,
         model=MODEL_NAME
     )
+
 
 def get_conversation_messages(db: Session, conversation_id: str, user_id: str):
     messages = db.query(Message).filter(
@@ -193,6 +198,7 @@ def get_conversation_messages(db: Session, conversation_id: str, user_id: str):
             history.append(AIMessage(content=msg.content))
     return history
 
+
 def create_new_conversation(db: Session, user_id: str):
     """
     Creates a new conversation for the given user.
@@ -202,6 +208,7 @@ def create_new_conversation(db: Session, user_id: str):
     db.commit()
     db.refresh(new_conversation)
     return new_conversation
+
 
 def generate_conversation_title(first_user_message: str, first_ai_response: str):
     """
@@ -219,6 +226,7 @@ def generate_conversation_title(first_user_message: str, first_ai_response: str)
     # Ensure title is short
     title = ' '.join(title.strip().split()[:4])
     return title
+
 
 def continue_conversation(db: Session, conversation_id: str, user_id: str, message_content: str,
                           selected_documents: Optional[List[str]] = None):
@@ -299,7 +307,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
             response_text = conversation_chain.predict(input=message_content)
         end_time = time.time()
         response_time = end_time - start_time
-        tokens_generated = len(response_text.split()) # Approximate token count
+        tokens_generated = len(response_text.split())  # Approximate token count
     except Exception as e:
         logger.error(f"Failed to generate AI response: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate AI response.")
@@ -318,6 +326,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         db.commit()
 
     return {"llm_response": response_text}
+
 
 def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_message: str, ai_response: str,
                       tokens_generated: int, response_time: float):
@@ -344,6 +353,7 @@ def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_mess
     )
     db.add(llm_message)
     db.commit()
+
 
 def delete_conversation(db: Session, conversation_id: str, user_id: str):
     """
