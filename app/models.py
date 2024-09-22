@@ -29,37 +29,38 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'), nullable=False)  # FK to User
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'), nullable=False)
     start_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     end_time = Column(DateTime, nullable=True)
-    summary = Column(Text, nullable=True)  # Store chat summary
-    status = Column(String, default="active")  # active, closed, etc.
+    title = Column(String, nullable=True)
+    status = Column(String, default="active")
 
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation")
     documents = relationship("Document", back_populates="conversation")
-
 
 class Message(Base):
     __tablename__ = "messages"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     conversation_id = Column(UUID(as_uuid=True), ForeignKey('conversations.id'), nullable=False)
-    sender_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))  # The sender of the message
+    sender_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     content = Column(Text, nullable=False)
     llm_model = Column(String, nullable=False)
-    response_time = Column(Float, nullable=True)  # Time in seconds to generate response
+    tokens_generated = Column(Integer, nullable=True, default=0)
+    response_time = Column(Float, nullable=True, default=0)
     timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     conversation = relationship("Conversation", back_populates="messages")
 
 class Document(Base):
     __tablename__ = "documents"
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     conversation_id = Column(UUID(as_uuid=True), ForeignKey('conversations.id'), nullable=True)
     file_name = Column(String, nullable=False)
-    file_url = Column(String, nullable=True)  # Update if storing the file path or URL
+    file_path = Column(String, nullable=False)
     upload_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     user = relationship("User", back_populates="documents")
