@@ -2,8 +2,8 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import List, Optional
 
-from fastapi import Depends, HTTPException, status
-from fastapi import FastAPI, UploadFile, File
+from fastapi import Depends, HTTPException, status, File, UploadFile
+from fastapi import FastAPI
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -133,11 +133,18 @@ def start_conversation(db: Session = Depends(get_db), current_user: models.User 
 
 
 # Continue a conversation
+from pydantic import BaseModel
+
+
+class ContinueConversationRequest(BaseModel):
+    message: str
+    selected_documents: Optional[List[str]] = None
+
+
 @app.post("/conversations/{conversation_id}/continue")
 def continue_existing_conversation(
         conversation_id: str,
-        message: str,
-        selected_documents: Optional[List[str]] = None,
+        request: ContinueConversationRequest,
         db: Session = Depends(get_db),
         current_user: models.User = Depends(auth.get_current_user)
 ):
@@ -145,22 +152,20 @@ def continue_existing_conversation(
         db,
         conversation_id,
         user_id=str(current_user.user_id),
-        message_content=message,
-        selected_documents=selected_documents
+        message_content=request.message,
+        selected_documents=request.selected_documents
     )
     return response
 
 
-@app.post("/conversations/{conversation_id}/upload")
+@app.post("/documents/upload")
 def upload_documents(
-        conversation_id: str,
         files: List[UploadFile] = File(...),
         db: Session = Depends(get_db),
         current_user: models.User = Depends(auth.get_current_user)
 ):
-    return conversations.upload_documents(
+    return conversations.upload_user_documents(
         db=db,
-        conversation_id=conversation_id,
         user_id=str(current_user.user_id),
         files=files
     )

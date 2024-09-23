@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -62,6 +62,7 @@ class ConversationOut(BaseModel):
     title: Optional[str] = None
     status: str
     user_id: str
+    selected_document_ids: List[str] = []
 
     class Config:
         from_attributes = True
@@ -70,6 +71,12 @@ class ConversationOut(BaseModel):
     def convert_uuid_to_str(cls, value):
         if isinstance(value, UUID):
             return str(value)
+        return value
+
+    @field_validator('selected_document_ids', mode='before')
+    def convert_uuids_to_str(cls, value):
+        if value and isinstance(value, list):
+            return [str(v) for v in value]
         return value
 
 
@@ -85,12 +92,13 @@ class DocumentOut(BaseModel):
     id: str
     file_name: str
     upload_time: datetime
-    conversation_id: Optional[str] = None
+    size: float
+    checksum: str
 
     class Config:
         from_attributes = True
 
-    @field_validator('id', 'conversation_id', mode='before')
+    @field_validator('id', mode='before')
     def convert_uuid_to_str(cls, value):
         if isinstance(value, UUID):
             return str(value)

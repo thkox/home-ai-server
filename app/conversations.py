@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import logging
 import os
 import time
@@ -71,20 +72,10 @@ SIMPLE_PROMPT_TEMPLATE = PromptTemplate(
 )
 
 
-def upload_documents(db: Session, conversation_id: str, user_id: str, files: List[UploadFile]):
+def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
     """
-    Handles document uploads during a conversation.
+    Handles document uploads for a user, without requiring a conversation.
     """
-    # Verify the conversation exists and belongs to the user
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id,
-        Conversation.user_id == user_id,
-        Conversation.status == "active"
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found or closed")
-
     user_documents_dir = os.path.join(DOCUMENTS_DIRECTORY, user_id)
     os.makedirs(user_documents_dir, exist_ok=True)
 
@@ -92,11 +83,31 @@ def upload_documents(db: Session, conversation_id: str, user_id: str, files: Lis
 
     # Process each file
     for upload_file in files:
-        # Generate a unique filename
-        unique_filename = f"{uuid.uuid4()}_{upload_file.filename}"
-        file_path = os.path.join(user_documents_dir, unique_filename)
+        file_contents = upload_file.file.read()
+        # Compute SHA256 checksum
+        checksum = hashlib.sha256(file_contents).hexdigest()
+
+        # Check if the document already exists for the user
+        existing_document = db.query(Document).filter(
+            Document.user_id == user_id,
+            Document.checksum == checksum
+        ).first()
+
+        if existing_document:
+            logger.info(f"Document {upload_file.filename} already exists for user {user_id}. Skipping upload.")
+            continue  # Do not reupload
+
+        # Generate the file name in the format {document_id}_{file_name}.{extension}
+        file_extension = os.path.splitext(upload_file.filename)[1]
+        new_file_name = f"{uuid.uuid4()}_{upload_file.filename}"
+        file_path = os.path.join(user_documents_dir, new_file_name)
+
+        # Save the file
         with open(file_path, 'wb') as f:
-            f.write(upload_file.file.read())
+            f.write(file_contents)
+
+        # Calculate file size in MB
+        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
 
         # Create a new Document instance
         new_document = Document(
@@ -104,17 +115,18 @@ def upload_documents(db: Session, conversation_id: str, user_id: str, files: Lis
             file_name=upload_file.filename,
             file_path=file_path,
             upload_time=datetime.datetime.now(datetime.timezone.utc),
-            conversation_id=conversation_id
+            size=file_size_mb,
+            checksum=checksum
         )
         db.add(new_document)
+        db.flush()  # Get the document id
+
+        db.commit()
+        db.refresh(new_document)
         document_instances.append(new_document)
 
-    # Commit to save the Document instances and get their ids
-    db.commit()
-
-    # Refresh the document instances to get their ids
-    for doc in document_instances:
-        db.refresh(doc)
+    if not document_instances:
+        return {"message": "No new documents were uploaded."}
 
     # Process and store documents
     try:
@@ -128,7 +140,7 @@ def upload_documents(db: Session, conversation_id: str, user_id: str, files: Lis
 
 def delete_document(db: Session, document_id: str, user_id: str):
     """
-    Deletes a document from storage and ChromaDB
+    Deletes a document from storage and ChromaDB, and removes it from conversations.
     """
     document = db.query(Document).filter(
         Document.id == document_id,
@@ -163,6 +175,15 @@ def delete_document(db: Session, document_id: str, user_id: str):
         vectorstore.delete(ids=ids_to_delete)
     else:
         logger.warning(f"No embeddings found for document_id {document_id}")
+
+    # Remove document_id from conversations
+    conversations_to_update = db.query(Conversation).filter(
+        Conversation.user_id == user_id,
+        Conversation.selected_document_ids.any(uuid.UUID(document_id))
+    ).all()
+
+    for conversation in conversations_to_update:
+        conversation.selected_document_ids.remove(uuid.UUID(document_id))
 
     # Delete from database
     db.delete(document)
@@ -242,6 +263,25 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found or closed")
 
+    # Validate selected_documents
+    if selected_documents:
+        # Ensure the documents belong to the user
+        user_documents = db.query(Document.id).filter(
+            Document.user_id == user_id,
+            Document.id.in_(selected_documents)
+        ).all()
+        user_document_ids = [str(doc.id) for doc in user_documents]
+
+        invalid_document_ids = set(selected_documents) - set(user_document_ids)
+        if invalid_document_ids:
+            raise HTTPException(status_code=400, detail=f"Invalid document_ids: {invalid_document_ids}")
+
+        # Update conversation's selected_document_ids
+        conversation.selected_document_ids = [uuid.UUID(doc_id) for doc_id in selected_documents]
+        db.commit()
+    else:
+        selected_documents = [str(doc_id) for doc_id in conversation.selected_document_ids]
+
     # Initialize embeddings and vector store
     embeddings = OllamaEmbeddings(
         base_url=OLLAMA_URL,
@@ -265,7 +305,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
                     where={"document_id": {"$in": selected_documents}}
                 )
             else:
-                retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+                retriever = None  # No documents selected
     except Exception as e:
         logger.error(f"Error accessing vector store: {e}")
         retriever = None
@@ -367,12 +407,14 @@ def delete_conversation(db: Session, conversation_id: str, user_id: str):
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Delete related messages and documents
+    # Delete related messages
     db.query(Message).filter(Message.conversation_id == conversation_id).delete()
-    documents = db.query(Document).filter(Document.conversation_id == conversation_id).all()
-    for document in documents:
-        delete_document(db, str(document.id), user_id)
 
+    # Remove conversation's selected documents
+    conversation.selected_document_ids = []
+    db.commit()
+
+    # Delete conversation
     db.delete(conversation)
     db.commit()
     return {"message": "Conversation and related messages deleted successfully"}

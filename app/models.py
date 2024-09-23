@@ -3,7 +3,7 @@ import enum
 import uuid
 
 from sqlalchemy import Column, Integer, String, Boolean, Enum, ForeignKey, DateTime, Text, Float
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -39,10 +39,11 @@ class Conversation(Base):
     end_time = Column(DateTime, nullable=True)
     title = Column(String, nullable=True)
     status = Column(String, default="active")
+    selected_document_ids = Column(ARRAY(UUID(as_uuid=True)), default=[])
 
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation")
-    documents = relationship("Document", back_populates="conversation")
+    # Removed documents relationship from Conversation since documents are tied to users
 
 
 class Message(Base):
@@ -65,10 +66,11 @@ class Document(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey('conversations.id'), nullable=True)
     file_name = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
     upload_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    size = Column(Float, nullable=False)
+    checksum = Column(String, nullable=False)
 
     user = relationship("User", back_populates="documents")
-    conversation = relationship("Conversation", back_populates="documents")
+    # Removed conversation relationship from Document
