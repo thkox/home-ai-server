@@ -214,7 +214,7 @@ def generate_conversation_title(first_user_message: str, first_ai_response: str)
     """
     Generates a conversation title using the LLM
     """
-    title_prompt = f"Generate a short 3-4 word title for a conversation based on the following messages:\n" \
+    title_prompt = f"Generate a short 3-4 word title for a conversation based on the following messages. Print ONLY the title.\n" \
                    f"User: {first_user_message}\n" \
                    f"AI: {first_ai_response}\n" \
                    f"Title:"
