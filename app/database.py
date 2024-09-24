@@ -14,7 +14,6 @@ DATABASE_PASSWORD = os.getenv("DATABASE_PASSWORD")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
 
 
-# Create DB if not exists
 def create_db_if_not_exists():
     conn = psycopg2.connect(
         dbname='postgres',
@@ -26,7 +25,6 @@ def create_db_if_not_exists():
     cur = conn.cursor()
     cur.execute(f"SELECT 1 FROM pg_database WHERE datname = '{DATABASE_NAME}';")
     if not cur.fetchone():
-        # Use template0 to avoid encoding conflict with template1 (SQL_ASCII)
         cur.execute(f"CREATE DATABASE {DATABASE_NAME} WITH ENCODING 'UTF8' TEMPLATE template0;")
     conn.close()
 

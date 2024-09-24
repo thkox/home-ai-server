@@ -18,13 +18,11 @@ models.Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Logic for startup (before yield)
     db = next(get_db())
     ensure_assistant_user_exists(db, User, UserRole)
 
-    yield  # Here is where FastAPI handles the requests
+    yield
 
-    # Logic for shutdown (after yield)
     db.close()
 
 
@@ -102,7 +100,6 @@ def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Check if the new email already exists in the database
     if db_user.email != user.email:
         email_exists = db.query(models.User).filter(models.User.email == user.email).first()
         if email_exists:
@@ -125,14 +122,12 @@ def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends
     )
 
 
-# Start a new conversation
 @app.post("/conversations/", response_model=schemas.ConversationOut)
 def start_conversation(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     new_convo = conversations.create_new_conversation(db, user_id=str(current_user.user_id))
     return new_convo
 
 
-# Continue a conversation
 from pydantic import BaseModel
 
 
@@ -189,7 +184,6 @@ def get_user_documents(
     return documents
 
 
-# Delete a conversation
 @app.delete("/conversations/{conversation_id}")
 def delete_conversation(conversation_id: str, db: Session = Depends(get_db),
                         current_user: models.User = Depends(auth.get_current_user)):

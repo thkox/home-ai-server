@@ -15,7 +15,6 @@ from langchain_community.embeddings import OllamaEmbeddings
 
 from .models import Document
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -26,25 +25,21 @@ DOCUMENTS_DIRECTORY = "./documents"
 
 
 def process_and_store_documents(documents: List[Document], user_id: str):
-    # Initialize embedding model
     embeddings = OllamaEmbeddings(
         base_url=OLLAMA_URL,
         model=EMBEDDING_MODEL_NAME
     )
 
-    # Initialize Chroma vector store
     vectorstore = Chroma(
         collection_name=user_id,
         embedding_function=embeddings,
         persist_directory=CHROMADB_PERSIST_DIRECTORY,
     )
 
-    # Process each document
     for document in documents:
         file_path = document.file_path
         file_extension = os.path.splitext(document.file_name)[1].lower()
 
-        # Use appropriate loader
         try:
             if file_extension == ".txt":
                 loader = TextLoader(file_path)
@@ -59,11 +54,9 @@ def process_and_store_documents(documents: List[Document], user_id: str):
 
             loaded_documents = loader.load()
 
-            # Split documents into chunks
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             docs = text_splitter.split_documents(loaded_documents)
 
-            # Add documents to vector store with metadata
             vectorstore.add_documents(docs, metadata={
                 "user_id": user_id,
                 "document_id": str(document.id),

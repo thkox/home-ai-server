@@ -11,7 +11,6 @@ class UserBase(BaseModel):
     email: EmailStr
     enabled: Optional[bool] = True
 
-    # Field-level validators
     @field_validator('first_name', 'last_name', mode='before')
     def names_must_be_alphabetic(cls, value):
         if not value.isalpha():

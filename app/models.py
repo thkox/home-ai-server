@@ -43,7 +43,6 @@ class Conversation(Base):
 
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation")
-    # Removed documents relationship from Conversation since documents are tied to users
 
 
 class Message(Base):
@@ -73,4 +72,3 @@ class Document(Base):
     checksum = Column(String, nullable=False)
 
     user = relationship("User", back_populates="documents")
-    # Removed conversation relationship from Document

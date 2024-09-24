@@ -11,7 +11,7 @@ def ensure_assistant_user_exists(db, User, UserRole):
             first_name="Assistant",
             last_name="Bot",
             email="assistant@bot.com",
-            hashed_password="",  # No password needed for the assistant
+            hashed_password="",
             role=UserRole.house_member,
             enabled=True
         )
