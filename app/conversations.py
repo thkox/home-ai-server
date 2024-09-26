@@ -258,17 +258,23 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         raise HTTPException(status_code=404, detail="Conversation not found or closed")
 
     if selected_documents:
+        try:
+            selected_document_uuids = [uuid.UUID(doc_id) for doc_id in selected_documents]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid document ID format")
+
         user_documents = db.query(Document.id).filter(
             Document.user_id == user_id,
-            Document.id.in_(selected_documents)
+            Document.id.in_(selected_document_uuids)
         ).all()
+
         user_document_ids = [str(doc.id) for doc in user_documents]
 
         invalid_document_ids = set(selected_documents) - set(user_document_ids)
         if invalid_document_ids:
-            raise HTTPException(status_code=400, detail=f"Invalid document_ids: {invalid_document_ids}")
+            raise HTTPException(status_code=404, detail="One or more documents does not exist")
 
-        conversation.selected_document_ids = [uuid.UUID(doc_id) for doc_id in selected_documents]
+        conversation.selected_document_ids = selected_document_uuids
         db.commit()
     else:
         selected_documents = [str(doc_id) for doc_id in conversation.selected_document_ids]
@@ -287,10 +293,10 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         if vectorstore._collection.count() == 0:
             retriever = None
         else:
-            if selected_documents:
+            if selected_document_uuids:
                 retriever = vectorstore.as_retriever(
                     search_kwargs={"k": 3},
-                    where={"document_id": {"$in": selected_documents}}
+                    where={"document_id": {"$in": selected_document_uuids}}
                 )
             else:
                 retriever = None  # No documents selected
