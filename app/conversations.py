@@ -277,7 +277,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         conversation.selected_document_ids = selected_document_uuids
         db.commit()
     else:
-        selected_documents = [str(doc_id) for doc_id in conversation.selected_document_ids]
+        selected_document_uuids = [str(doc_id) for doc_id in conversation.selected_document_ids]
 
     embeddings = OllamaEmbeddings(
         base_url=OLLAMA_URL,
@@ -343,7 +343,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         raise HTTPException(status_code=500, detail="Failed to generate AI response.")
 
     try:
-        log_message_to_db(db, conversation_id, user_id, message_content, response_text, tokens_generated, response_time)
+        llm_message = log_message_to_db(db, conversation_id, user_id, message_content, response_text, tokens_generated, response_time)
     except Exception as e:
         logger.error(f"Failed to log conversation: {e}")
         raise HTTPException(status_code=500, detail="Failed to log conversation.")
@@ -352,7 +352,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         conversation.title = generate_conversation_title(message_content, response_text)
         db.commit()
 
-    return {"llm_response": response_text}
+    return llm_message
 
 
 def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_message: str, ai_response: str,
@@ -380,6 +380,7 @@ def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_mess
     )
     db.add(llm_message)
     db.commit()
+    return llm_message
 
 
 def delete_conversation(db: Session, conversation_id: str, user_id: str):

@@ -139,21 +139,21 @@ class ContinueConversationRequest(BaseModel):
     selected_documents: Optional[List[str]] = None
 
 
-@app.post("/conversations/{conversation_id}/continue")
+@app.post("/conversations/{conversation_id}/continue", response_model=schemas.MessageOut)
 def continue_existing_conversation(
         conversation_id: str,
         request: ContinueConversationRequest,
         db: Session = Depends(get_db),
         current_user: models.User = Depends(auth.get_current_user)
 ):
-    response = conversations.continue_conversation(
+    llm_message = conversations.continue_conversation(
         db,
         conversation_id,
         user_id=str(current_user.user_id),
         message_content=request.message,
         selected_documents=request.selected_documents
     )
-    return response
+    return llm_message
 
 
 @app.post("/documents/upload")
