@@ -203,3 +203,23 @@ def get_user_conversations(
     ).all()
 
     return user_conversations
+
+@app.get("/conversations/{conversation_id}/messages", response_model=List[schemas.MessageOut])
+def get_conversation_messages(
+        conversation_id: str,
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(auth.get_current_user)
+):
+    conversation = db.query(models.Conversation).filter(
+        models.Conversation.id == conversation_id,
+        models.Conversation.user_id == current_user.user_id
+    ).first()
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    messages = db.query(models.Message).filter(
+        models.Message.conversation_id == conversation_id
+    ).order_by(models.Message.timestamp.asc()).all()
+
+    return messages

@@ -79,14 +79,6 @@ class ConversationOut(BaseModel):
         return value
 
 
-class MessageOut(BaseModel):
-    sender_id: Optional[str]
-    content: str
-    timestamp: datetime
-    tokens_generated: int
-    response_time: float
-
-
 class DocumentOut(BaseModel):
     id: str
     file_name: str
@@ -98,6 +90,22 @@ class DocumentOut(BaseModel):
         from_attributes = True
 
     @field_validator('id', mode='before')
+    def convert_uuid_to_str(cls, value):
+        if isinstance(value, UUID):
+            return str(value)
+        return value
+
+class MessageOut(BaseModel):
+    sender_id: Optional[str]
+    content: str
+    timestamp: datetime
+    tokens_generated: int
+    response_time: float
+
+    class Config:
+        from_attributes = True
+
+    @field_validator('sender_id', mode='before')
     def convert_uuid_to_str(cls, value):
         if isinstance(value, UUID):
             return str(value)
