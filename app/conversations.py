@@ -126,8 +126,16 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
         logger.error(f"Failed to process documents: {e}")
         raise HTTPException(status_code=500, detail="Failed to process documents.")
 
-    return {"message": "Documents uploaded and processed successfully."}
-
+    return [
+        {
+            "id": str(doc.id),
+            "file_name": doc.file_name,
+            "upload_time": doc.upload_time.isoformat(),
+            "size": doc.size,
+            "checksum": doc.checksum
+        }
+        for doc in document_instances
+    ]
 
 def delete_document(db: Session, document_id: str, user_id: str):
     """
