@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime, timezone
 import enum
 import uuid
 
@@ -35,7 +35,7 @@ class Conversation(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'), nullable=False)
-    start_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    start_time = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     end_time = Column(DateTime, nullable=True)
     title = Column(String, nullable=True)
     status = Column(String, default="active")
@@ -55,7 +55,7 @@ class Message(Base):
     llm_model = Column(String, nullable=False)
     tokens_generated = Column(Integer, nullable=True, default=0)
     response_time = Column(Float, nullable=True, default=0)
-    timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     conversation = relationship("Conversation", back_populates="messages")
 
@@ -67,7 +67,7 @@ class Document(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     file_name = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
-    upload_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    upload_time = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     size = Column(Float, nullable=False)
     checksum = Column(String, nullable=False)
 
