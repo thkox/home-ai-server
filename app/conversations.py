@@ -38,8 +38,8 @@ ollama_client = Ollama(
 )
 
 TEMPLATE = """
-You are Home AI. Your job is to assist house members with their daily tasks. You can speak multiple languages, but your native is English.
-Use the following documents, if they exist, to answer the question.
+You are Home AI assistant. Your job is to assist house members for questing-answering tasks. Your native language is English, but you can speak other languages too.
+Use the following pieces of retrieved context to answer the question. If you don't know the answer, say that you don't know.
 
 Documents:
 {context}
@@ -56,8 +56,7 @@ PROMPT_TEMPLATE = PromptTemplate(
 )
 
 SIMPLE_TEMPLATE = """
-You are Home AI. Your job is to assist house members with their daily tasks. You can speak multiple languages, but your native is English.
-
+You are Home AI assistant. Your job is to assist house members for questing-answering tasks. Your native language is English, but you can speak other languages too.
 Current conversation:
 {chat_history}
 Human: {input}
