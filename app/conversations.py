@@ -136,6 +136,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
         for doc in document_instances
     ]
 
+
 def delete_document(db: Session, document_id: str, user_id: str):
     """
     Deletes a document from storage and ChromaDB, and removes it from conversations.
@@ -342,7 +343,8 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         raise HTTPException(status_code=500, detail="Failed to generate AI response.")
 
     try:
-        llm_message = log_message_to_db(db, conversation_id, user_id, message_content, response_text, tokens_generated, response_time)
+        llm_message = log_message_to_db(db, conversation_id, user_id, message_content, response_text, tokens_generated,
+                                        response_time)
     except Exception as e:
         logger.error(f"Failed to log conversation: {e}")
         raise HTTPException(status_code=500, detail="Failed to log conversation.")

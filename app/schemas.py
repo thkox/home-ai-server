@@ -95,6 +95,7 @@ class DocumentOut(BaseModel):
             return str(value)
         return value
 
+
 class MessageOut(BaseModel):
     sender_id: Optional[str]
     content: str

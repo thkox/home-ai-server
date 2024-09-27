@@ -8,6 +8,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from . import models, schemas
 from .database import get_db
 from .models import User, UserRole
 from .schemas import TokenData
@@ -83,3 +84,21 @@ def get_current_admin_user(current_user: User = Depends(get_current_user)):
     if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return current_user
+
+
+def update_user_profile(db: Session, db_user: models.User, user: schemas.UserCreate):
+    db_user.first_name = user.first_name
+    db_user.last_name = user.last_name
+    db_user.email = user.email
+    if user.password:
+        db_user.hashed_password = get_password_hash(user.password)
+    db.commit()
+    db.refresh(db_user)
+    return schemas.UserOut(
+        user_id=str(db_user.user_id),
+        first_name=db_user.first_name,
+        last_name=db_user.last_name,
+        email=db_user.email,
+        enabled=db_user.enabled,
+        role=db_user.role
+    )

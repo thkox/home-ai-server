@@ -8,6 +8,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from . import models, schemas, auth, conversations
+from .auth import update_user_profile
 from .database import engine
 from .database import get_db
 from .models import User, UserRole
@@ -28,9 +29,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+
 @app.get("/")
 def read_root():
     return {"message": "Home AI API"}
+
 
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
@@ -79,21 +82,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 @app.put("/users/me", response_model=schemas.UserOut)
 def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db),
                       current_user: models.User = Depends(auth.get_current_user)):
-    current_user.first_name = user.first_name
-    current_user.last_name = user.last_name
-    current_user.email = user.email
-    if user.password:
-        current_user.hashed_password = auth.get_password_hash(user.password)
-    db.commit()
-    db.refresh(current_user)
-    return schemas.UserOut(
-        user_id=str(current_user.user_id),
-        first_name=current_user.first_name,
-        last_name=current_user.last_name,
-        email=current_user.email,
-        enabled=current_user.enabled,
-        role=current_user.role
-    )
+    return update_user_profile(db, current_user, user)
 
 
 @app.put("/users/{user_id}", response_model=schemas.UserOut)
@@ -108,21 +97,7 @@ def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends
         if email_exists:
             raise HTTPException(status_code=400, detail="Email already registered")
 
-    db_user.first_name = user.first_name
-    db_user.last_name = user.last_name
-    db_user.email = user.email
-    if user.password:
-        db_user.hashed_password = auth.get_password_hash(user.password)
-    db.commit()
-    db.refresh(db_user)
-    return schemas.UserOut(
-        user_id=str(db_user.user_id),
-        first_name=db_user.first_name,
-        last_name=db_user.last_name,
-        email=db_user.email,
-        enabled=db_user.enabled,
-        role=db_user.role
-    )
+    return update_user_profile(db, db_user, user)
 
 
 @app.post("/conversations/", response_model=schemas.ConversationOut)
@@ -203,6 +178,7 @@ def get_user_conversations(
     ).all()
 
     return user_conversations
+
 
 @app.get("/conversations/{conversation_id}/messages", response_model=List[schemas.MessageOut])
 def get_conversation_messages(
