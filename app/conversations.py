@@ -22,8 +22,6 @@ from .utils import ASSISTANT_UUID
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
-
 OLLAMA_URL = os.getenv("OLLAMA_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")

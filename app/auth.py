@@ -12,18 +12,12 @@ from . import models, schemas
 from .database import get_db
 from .models import User, UserRole
 from .schemas import TokenData
+from .utils import get_or_create_secret_key
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
-
-if not SECRET_KEY:
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="SECRET_KEY is not set in the environment variables"
-    )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -37,11 +31,12 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 
-def create_access_token(data: dict, expires_delta: timedelta = None):
+def create_access_token(data: dict, expires_delta: timedelta = None, db: Session = Depends(get_db)):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=60))
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    secret_key = get_or_create_secret_key(db)
+    encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=ALGORITHM)
     return encoded_jwt
 
 
@@ -64,7 +59,7 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     )
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, get_or_create_secret_key(db), algorithms=[ALGORITHM])
         user_id: str = payload.get("user_id")
         first_name: str = payload.get("first_name")
         last_name: str = payload.get("last_name")

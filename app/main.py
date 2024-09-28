@@ -12,7 +12,7 @@ from .auth import update_user_profile
 from .database import engine
 from .database import get_db
 from .models import User, UserRole
-from .utils import ensure_assistant_user_exists
+from .utils import ensure_assistant_user_exists, get_or_create_secret_key
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -21,6 +21,7 @@ models.Base.metadata.create_all(bind=engine)
 async def lifespan(app: FastAPI):
     db = next(get_db())
     ensure_assistant_user_exists(db, User, UserRole)
+    get_or_create_secret_key(db)
 
     yield
 
@@ -46,9 +47,9 @@ def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2Passw
         )
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        data={"sub": user.email, "user_id": str(user.user_id), "first_name": user.first_name,
-              "last_name": user.last_name},
-        expires_delta=access_token_expires
+        data={"sub": user.email, "user_id": str(user.user_id), "first_name": user.first_name, "last_name": user.last_name},
+        expires_delta=access_token_expires,
+        db=db  # Pass the db session here
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
