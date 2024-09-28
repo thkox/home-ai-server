@@ -3,20 +3,19 @@ import hashlib
 import logging
 import os
 import time
-import uuid
+from uuid import uuid4, UUID
 from typing import List, Optional
 
 from fastapi import HTTPException, UploadFile
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
-from langchain.schema import HumanMessage, AIMessage
+
 from langchain.prompts import PromptTemplate
 
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.llms.ollama import Ollama
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
-from langchain_community.chat_message_histories import ChatMessageHistory
 from sqlalchemy.orm import Session
 from langchain_chroma import Chroma
 
@@ -36,45 +35,10 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
 CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "./chroma_db")
 DOCUMENTS_DIRECTORY = "./documents"
 
-from langchain_community.embeddings import OllamaEmbeddings
-from langchain_community.llms.ollama import Ollama
-
 ollama_client = Ollama(
     base_url=OLLAMA_URL,
     model=MODEL_NAME
 )
-
-TEMPLATE = """
-You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
-Use the following pieces of retrieved context to answer the question. If you don't know the answer, say that you don't know.
-
-Documents:
-{context}
-
-Current conversation:
-{chat_history}
-Human: {question}
-AI:
-"""
-
-PROMPT_TEMPLATE = PromptTemplate(
-    input_variables=["chat_history", "context", "question"],
-    template=TEMPLATE
-)
-
-SIMPLE_TEMPLATE = """
-You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
-Current conversation:
-{chat_history}
-Human: {input}
-AI:
-"""
-
-SIMPLE_PROMPT_TEMPLATE = PromptTemplate(
-    input_variables=["chat_history", "input"],
-    template=SIMPLE_TEMPLATE
-)
-
 
 def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
     """
@@ -99,8 +63,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
             continue
 
         # Generate the file name in the format {document_id}_{file_name}.{extension}
-        file_extension = os.path.splitext(upload_file.filename)[1]
-        new_file_name = f"{uuid.uuid4()}_{upload_file.filename}"
+        new_file_name = f"{uuid4()}_{upload_file.filename}"
         file_path = os.path.join(user_documents_dir, new_file_name)
 
         with open(file_path, 'wb') as f:
@@ -181,11 +144,11 @@ def delete_document(db: Session, document_id: str, user_id: str):
 
     conversations_to_update = db.query(Conversation).filter(
         Conversation.user_id == user_id,
-        Conversation.selected_document_ids.any(uuid.UUID(document_id))
+        Conversation.selected_document_ids.any(UUID(document_id))
     ).all()
 
     for conversation in conversations_to_update:
-        conversation.selected_document_ids.remove(uuid.UUID(document_id))
+        conversation.selected_document_ids.remove(UUID(document_id))
 
     db.delete(document)
     db.commit()
@@ -249,6 +212,26 @@ def generate_conversation_title(first_user_message: str, first_ai_response: str)
     title = ' '.join(title.strip().split()[:4])
     return title
 
+def invoke_chain(system_prompt: str, message_history: List[HumanMessage], message_content: str):
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            SystemMessage(content=system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+    chain = prompt | ollama_client
+    messages = message_history + [HumanMessage(content=message_content)]
+    try:
+        start_time = time.time()
+        ai_msg = chain.invoke({"messages": messages})
+        end_time = time.time()
+        response_text = ai_msg
+        response_time = end_time - start_time
+        tokens_generated = len(response_text.split())  # Approximate token count
+        return response_text, response_time, tokens_generated
+    except Exception as e:
+        logger.error(f"Failed to generate AI response: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate AI response.")
 
 def continue_conversation(db: Session, conversation_id: str, user_id: str, message_content: str,
                           selected_documents: Optional[List[str]] = None):
@@ -266,7 +249,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
 
     if selected_documents:
         try:
-            selected_document_uuids = [uuid.UUID(doc_id) for doc_id in selected_documents]
+            selected_document_uuids = [UUID(doc_id) for doc_id in selected_documents]
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid document ID format")
 
@@ -323,58 +306,17 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         system_prompt = f"""
         You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
         Use the following pieces of retrieved context to answer the question. If you don't know the answer, say that you don't know.
-
+    
         Documents:
         {context_content}
         """
-
-        # Create the prompt
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                SystemMessage(content=system_prompt),
-                MessagesPlaceholder(variable_name="messages"),
-            ]
-        )
-        chain = prompt | ollama_client
-        # Prepare messages
-        messages = message_history + [HumanMessage(content=message_content)]
-        # Invoke the chain
-        try:
-            start_time = time.time()
-            ai_msg = chain.invoke({"messages": messages})
-            end_time = time.time()
-            response_text = ai_msg
-            response_time = end_time - start_time
-            tokens_generated = len(response_text.split())  # Approximate token count
-        except Exception as e:
-            logger.error(f"Failed to generate AI response: {e}")
-            raise HTTPException(status_code=500, detail="Failed to generate AI response.")
     else:
         # Prepare the system prompt
         system_prompt = """
         You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
         """
-        # Create the prompt
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                SystemMessage(content=system_prompt),
-                MessagesPlaceholder(variable_name="messages"),
-            ]
-        )
-        chain = prompt | ollama_client
-        # Prepare messages
-        messages = message_history + [HumanMessage(content=message_content)]
-        # Invoke the chain
-        try:
-            start_time = time.time()
-            ai_msg = chain.invoke({"messages": messages})
-            end_time = time.time()
-            response_text = ai_msg
-            response_time = end_time - start_time
-            tokens_generated = len(response_text.split())  # Approximate token count
-        except Exception as e:
-            logger.error(f"Failed to generate AI response: {e}")
-            raise HTTPException(status_code=500, detail="Failed to generate AI response.")
+
+    response_text, response_time, tokens_generated = invoke_chain(system_prompt, message_history, message_content)
 
     try:
         llm_message = log_message_to_db(db, conversation_id, user_id, message_content, response_text, tokens_generated,
