@@ -3,21 +3,17 @@ import hashlib
 import logging
 import os
 import time
-from uuid import uuid4, UUID
 from typing import List, Optional
+from uuid import uuid4, UUID
 
 from fastapi import HTTPException, UploadFile
-
 from langchain.prompts import PromptTemplate
-
+from langchain_chroma import Chroma
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.llms.ollama import Ollama
-
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from sqlalchemy.orm import Session
-from langchain_chroma import Chroma
 
 from .models import Conversation, Message, Document
 from .rag_processing import process_and_store_documents
@@ -25,7 +21,6 @@ from .utils import ASSISTANT_UUID
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
 
@@ -39,6 +34,7 @@ ollama_client = Ollama(
     base_url=OLLAMA_URL,
     model=MODEL_NAME
 )
+
 
 def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
     """
@@ -212,6 +208,7 @@ def generate_conversation_title(first_user_message: str, first_ai_response: str)
     title = ' '.join(title.strip().split()[:4])
     return title
 
+
 def invoke_chain(system_prompt: str, message_history: List[HumanMessage], message_content: str):
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -232,6 +229,7 @@ def invoke_chain(system_prompt: str, message_history: List[HumanMessage], messag
     except Exception as e:
         logger.error(f"Failed to generate AI response: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate AI response.")
+
 
 def continue_conversation(db: Session, conversation_id: str, user_id: str, message_content: str,
                           selected_documents: Optional[List[str]] = None):
@@ -296,8 +294,6 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
 
     message_history = get_conversation_messages(db, conversation_id, user_id)
 
-
-
     if retriever:
         # Retrieve context
         context_docs = retriever.get_relevant_documents(message_content)
@@ -330,7 +326,6 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         db.commit()
 
     return llm_message
-
 
 
 def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_message: str, ai_response: str,
