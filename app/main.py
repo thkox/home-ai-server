@@ -47,7 +47,7 @@ def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2Passw
         )
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        data={"sub": user.email, "user_id": str(user.user_id), "first_name": user.first_name, "last_name": user.last_name},
+        data={"user_id": str(user.user_id)},
         expires_delta=access_token_expires,
         db=db  # Pass the db session here
     )
