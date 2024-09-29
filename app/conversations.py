@@ -194,7 +194,7 @@ def generate_conversation_title(first_user_message: str, first_ai_response: str)
     Generates a conversation title using the LLM
     """
     title_prompt_template = PromptTemplate(
-        template="Generate a short 3-4 word title for a conversation based on the following messages. Print ONLY the title.\n"
+        template="Generate a short 3-4 word title with an emoji at the start of the title for a conversation based on the following messages. Print ONLY the title.\n"
                  "User: {user_message}\n"
                  "AI: {ai_response}\n"
                  "Title:",
