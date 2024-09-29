@@ -46,8 +46,6 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
 
 
 class ConversationCreate(BaseModel):
