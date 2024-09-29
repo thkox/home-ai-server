@@ -42,6 +42,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
     os.makedirs(user_documents_dir, exist_ok=True)
 
     document_instances = []
+    existing_documents_details = []
 
     for upload_file in files:
         file_contents = upload_file.file.read()
@@ -54,6 +55,13 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
 
         if existing_document:
             logger.info(f"Document {upload_file.filename} already exists for user {user_id}. Skipping upload.")
+            existing_documents_details.append({
+                "id": str(existing_document.id),
+                "file_name": existing_document.file_name,
+                "upload_time": existing_document.upload_time.isoformat(),
+                "size": existing_document.size,
+                "checksum": existing_document.checksum
+            })
             continue
 
         # Generate the file name in the format {document_id}_{file_name}.{extension}
@@ -80,7 +88,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
         db.refresh(new_document)
         document_instances.append(new_document)
 
-    if not document_instances:
+    if not document_instances and not existing_documents_details:
         return {"message": "No new documents were uploaded."}
 
     try:
@@ -89,7 +97,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
         logger.error(f"Failed to process documents: {e}")
         raise HTTPException(status_code=500, detail="Failed to process documents.")
 
-    return [
+    new_documents_details = [
         {
             "id": str(doc.id),
             "file_name": doc.file_name,
@@ -100,6 +108,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
         for doc in document_instances
     ]
 
+    return new_documents_details + existing_documents_details
 
 def delete_document(db: Session, document_id: str, user_id: str):
     """
