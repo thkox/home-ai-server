@@ -200,3 +200,30 @@ def get_conversation_messages(
     ).order_by(models.Message.timestamp.asc()).all()
 
     return messages
+
+@app.get("/users/me/details", response_model=schemas.UserOut)
+def get_user_details(current_user: models.User = Depends(auth.get_current_user)):
+    return schemas.UserOut(
+        user_id=str(current_user.user_id),
+        first_name=current_user.first_name,
+        last_name=current_user.last_name,
+        email=current_user.email,
+        enabled=current_user.enabled,
+        role=current_user.role
+    )
+
+
+@app.get("/conversations/{conversation_id}/details", response_model=schemas.ConversationOut)
+def get_conversation_details(conversation_id: str, db: Session = Depends(get_db)):
+    conversation = db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conversation
+
+
+@app.get("/documents/{document_id}/details", response_model=schemas.DocumentOut)
+def get_document_details(document_id: str, db: Session = Depends(get_db)):
+    document = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document
