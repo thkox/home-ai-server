@@ -79,15 +79,29 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         role=new_user.role
     )
 
+@app.get("/users/me/details", response_model=schemas.UserOut)
+def get_user_details(current_user: models.User = Depends(auth.get_current_user)):
+    return schemas.UserOut(
+        user_id=str(current_user.user_id),
+        first_name=current_user.first_name,
+        last_name=current_user.last_name,
+        email=current_user.email,
+        enabled=current_user.enabled,
+        role=current_user.role
+    )
 
-@app.put("/users/me", response_model=schemas.UserOut)
-def update_my_profile(user: schemas.UserCreate, db: Session = Depends(get_db),
+@app.put("/users/me/profile", response_model=schemas.UserOut)
+def update_my_profile(user: schemas.UserUpdateProfile, db: Session = Depends(get_db),
                       current_user: models.User = Depends(auth.get_current_user)):
-    return update_user_profile(db, current_user, user)
+    return auth.update_user_profile(db, current_user, user)
 
+@app.put("/users/me/password")
+def change_my_password(password_data: schemas.ChangePassword, db: Session = Depends(get_db),
+                       current_user: models.User = Depends(auth.get_current_user)):
+    return auth.change_user_password(db, current_user, password_data.old_password, password_data.new_password)
 
-@app.put("/users/{user_id}", response_model=schemas.UserOut)
-def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends(get_db),
+@app.put("/users/{user_id}/profile", response_model=schemas.UserOut)
+def update_profile(user_id: str, user: schemas.UserUpdateProfile, db: Session = Depends(get_db),
                    current_user: models.User = Depends(auth.get_current_admin_user)):
     db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not db_user:
@@ -98,14 +112,64 @@ def update_profile(user_id: str, user: schemas.UserCreate, db: Session = Depends
         if email_exists:
             raise HTTPException(status_code=400, detail="Email already registered")
 
-    return update_user_profile(db, db_user, user)
+    return auth.update_user_profile(db, db_user, user)
 
+@app.put("/users/{user_id}/password")
+def change_user_password(user_id: str, password_data: schemas.ChangePassword, db: Session = Depends(get_db),
+                         current_user: models.User = Depends(auth.get_current_admin_user)):
+    db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return auth.change_user_password(db, db_user, password_data.old_password, password_data.new_password)
 
 @app.post("/conversations/", response_model=schemas.ConversationOut)
 def start_conversation(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     new_convo = conversations.create_new_conversation(db, user_id=str(current_user.user_id))
     return new_convo
 
+@app.get("/conversations/{conversation_id}/details", response_model=schemas.ConversationOut)
+def get_conversation_details(conversation_id: str, db: Session = Depends(get_db)):
+    conversation = db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conversation
+
+@app.get("/conversations/me", response_model=List[schemas.ConversationOut])
+def get_user_conversations(
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(auth.get_current_user)
+):
+    user_conversations = db.query(models.Conversation).filter(
+        models.Conversation.user_id == current_user.user_id
+    ).all()
+
+    return user_conversations
+
+@app.delete("/conversations/{conversation_id}")
+def delete_conversation(conversation_id: str, db: Session = Depends(get_db),
+                        current_user: models.User = Depends(auth.get_current_user)):
+    return conversations.delete_conversation(db, conversation_id, user_id=str(current_user.user_id))
+
+@app.get("/conversations/{conversation_id}/messages", response_model=List[schemas.MessageOut])
+def get_conversation_messages(
+        conversation_id: str,
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(auth.get_current_user)
+):
+    conversation = db.query(models.Conversation).filter(
+        models.Conversation.id == conversation_id,
+        models.Conversation.user_id == current_user.user_id
+    ).first()
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    messages = db.query(models.Message).filter(
+        models.Message.conversation_id == conversation_id
+    ).order_by(models.Message.timestamp.asc()).all()
+
+    return messages
 
 from pydantic import BaseModel
 
@@ -144,15 +208,12 @@ def upload_documents(
         files=files
     )
 
-
-@app.delete("/documents/{document_id}")
-def delete_user_document(
-        document_id: str,
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(auth.get_current_user)
-):
-    return conversations.delete_document(db, document_id, user_id=str(current_user.user_id))
-
+@app.get("/documents/{document_id}/details", response_model=schemas.DocumentOut)
+def get_document_details(document_id: str, db: Session = Depends(get_db)):
+    document = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document
 
 @app.get("/documents/me", response_model=List[schemas.DocumentOut])
 def get_user_documents(
@@ -162,68 +223,10 @@ def get_user_documents(
     documents = conversations.list_user_documents(db, user_id=str(current_user.user_id))
     return documents
 
-
-@app.delete("/conversations/{conversation_id}")
-def delete_conversation(conversation_id: str, db: Session = Depends(get_db),
-                        current_user: models.User = Depends(auth.get_current_user)):
-    return conversations.delete_conversation(db, conversation_id, user_id=str(current_user.user_id))
-
-
-@app.get("/conversations/me", response_model=List[schemas.ConversationOut])
-def get_user_conversations(
+@app.delete("/documents/{document_id}")
+def delete_user_document(
+        document_id: str,
         db: Session = Depends(get_db),
         current_user: models.User = Depends(auth.get_current_user)
 ):
-    user_conversations = db.query(models.Conversation).filter(
-        models.Conversation.user_id == current_user.user_id
-    ).all()
-
-    return user_conversations
-
-
-@app.get("/conversations/{conversation_id}/messages", response_model=List[schemas.MessageOut])
-def get_conversation_messages(
-        conversation_id: str,
-        db: Session = Depends(get_db),
-        current_user: models.User = Depends(auth.get_current_user)
-):
-    conversation = db.query(models.Conversation).filter(
-        models.Conversation.id == conversation_id,
-        models.Conversation.user_id == current_user.user_id
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    messages = db.query(models.Message).filter(
-        models.Message.conversation_id == conversation_id
-    ).order_by(models.Message.timestamp.asc()).all()
-
-    return messages
-
-@app.get("/users/me/details", response_model=schemas.UserOut)
-def get_user_details(current_user: models.User = Depends(auth.get_current_user)):
-    return schemas.UserOut(
-        user_id=str(current_user.user_id),
-        first_name=current_user.first_name,
-        last_name=current_user.last_name,
-        email=current_user.email,
-        enabled=current_user.enabled,
-        role=current_user.role
-    )
-
-
-@app.get("/conversations/{conversation_id}/details", response_model=schemas.ConversationOut)
-def get_conversation_details(conversation_id: str, db: Session = Depends(get_db)):
-    conversation = db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return conversation
-
-
-@app.get("/documents/{document_id}/details", response_model=schemas.DocumentOut)
-def get_document_details(document_id: str, db: Session = Depends(get_db)):
-    document = db.query(models.Document).filter(models.Document.id == document_id).first()
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return document
+    return conversations.delete_document(db, document_id, user_id=str(current_user.user_id))

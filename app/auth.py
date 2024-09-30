@@ -81,12 +81,10 @@ def get_current_admin_user(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-def update_user_profile(db: Session, db_user: models.User, user: schemas.UserCreate):
+def update_user_profile(db: Session, db_user: models.User, user: schemas.UserUpdateProfile):
     db_user.first_name = user.first_name
     db_user.last_name = user.last_name
     db_user.email = user.email
-    if user.password:
-        db_user.hashed_password = get_password_hash(user.password)
     db.commit()
     db.refresh(db_user)
     return schemas.UserOut(
@@ -97,3 +95,11 @@ def update_user_profile(db: Session, db_user: models.User, user: schemas.UserCre
         enabled=db_user.enabled,
         role=db_user.role
     )
+
+def change_user_password(db: Session, db_user: models.User, old_password: str, new_password: str):
+    if not verify_password(old_password, db_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Old password is incorrect")
+    db_user.hashed_password = get_password_hash(new_password)
+    db.commit()
+    db.refresh(db_user)
+    return {"message": "Password updated successfully"}
