@@ -6,6 +6,7 @@ import time
 from typing import List, Optional
 from uuid import uuid4, UUID
 
+from sqlalchemy.orm.attributes import flag_modified
 from fastapi import HTTPException, UploadFile
 from langchain.prompts import PromptTemplate
 from langchain_chroma import Chroma
@@ -269,7 +270,18 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         if invalid_document_ids:
             raise HTTPException(status_code=404, detail="One or more documents does not exist")
 
-        conversation.selected_document_ids = selected_document_uuids
+        # Add new document IDs to the existing list without rewriting it
+        for doc_id in selected_document_uuids:
+            if doc_id not in conversation.selected_document_ids:
+                conversation.selected_document_ids.append(doc_id)
+
+        # Mark the attribute as modified
+        flag_modified(conversation, "selected_document_ids")
+
+        # Log the document IDs before committing
+        logger.info(f"Selected document UUIDs: {selected_document_uuids}")
+        logger.info(f"Conversation selected document IDs: {conversation.selected_document_ids}")
+
         db.commit()
     else:
         selected_document_uuids = [str(doc_id) for doc_id in conversation.selected_document_ids]
