@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, Boolean, Enum, ForeignKey, DateTime, Text, Float
+from sqlalchemy import Column, Integer, String, Boolean, Enum, ForeignKey, DateTime, Text, Float, BigInteger
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 
@@ -73,7 +73,7 @@ class Document(Base):
     file_name = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
     upload_time = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    size = Column(Float, nullable=False)
+    size = Column(BigInteger, nullable=False)
     checksum = Column(String, nullable=False)
 
     user = relationship("User", back_populates="documents")

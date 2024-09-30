@@ -81,7 +81,7 @@ class DocumentOut(BaseModel):
     id: str
     file_name: str
     upload_time: datetime
-    size: float
+    size: int
     checksum: str
 
     class Config:

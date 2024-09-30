@@ -72,14 +72,14 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
         with open(file_path, 'wb') as f:
             f.write(file_contents)
 
-        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+        file_size_bytes = os.path.getsize(file_path)
 
         new_document = Document(
             user_id=user_id,
             file_name=upload_file.filename,
             file_path=file_path,
             upload_time=datetime.datetime.now(datetime.timezone.utc),
-            size=file_size_mb,
+            size=file_size_bytes,  # Save size in bytes
             checksum=checksum
         )
         db.add(new_document)
