@@ -38,6 +38,7 @@ class UserOut(UserBase):
     user_id: str
     role: str
 
+
 class UserUpdateProfile(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=50, pattern=r'^[a-zA-Z]+$')
     last_name: str = Field(..., min_length=1, max_length=50, pattern=r'^[a-zA-Z]+$')
@@ -48,6 +49,7 @@ class UserUpdateProfile(BaseModel):
         if not value.isalpha():
             raise ValueError('Names must contain only alphabetic characters.')
         return value
+
 
 class ChangePassword(BaseModel):
     old_password: str = Field(..., min_length=8, max_length=50)
@@ -77,6 +79,11 @@ class TokenData(BaseModel):
 
 class ConversationCreate(BaseModel):
     user_id: str
+
+
+class ContinueConversationRequest(BaseModel):
+    message: str
+    selected_documents: Optional[List[str]] = None
 
 
 class ConversationOut(BaseModel):

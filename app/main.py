@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import List, Optional
+from typing import List
 
 from fastapi import Depends, HTTPException, status, File, UploadFile
 from fastapi import FastAPI
@@ -8,10 +8,10 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from . import models, schemas, auth, conversations
-from .auth import update_user_profile
 from .database import engine
 from .database import get_db
 from .models import User, UserRole
+from .schemas import ContinueConversationRequest
 from .utils import ensure_assistant_user_exists, get_or_create_secret_key
 
 models.Base.metadata.create_all(bind=engine)
@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
     yield
 
     db.close()
+
 
 description = "This is the API for the Home AI project. It allows users to interact with the AI assistant, upload documents, and manage their profile."
 
@@ -58,6 +59,7 @@ app = FastAPI(
     lifespan=lifespan,
     openapi_tags=tags_metadata
 )
+
 
 @app.get("/", tags=["Root"])
 def read_root():
@@ -107,6 +109,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         role=new_user.role
     )
 
+
 @app.get("/users/me/details", response_model=schemas.UserOut, tags=["Users"])
 def get_user_details(current_user: models.User = Depends(auth.get_current_user)):
     return schemas.UserOut(
@@ -118,15 +121,18 @@ def get_user_details(current_user: models.User = Depends(auth.get_current_user))
         role=current_user.role
     )
 
+
 @app.put("/users/me/profile", response_model=schemas.UserOut, tags=["Users"])
 def update_my_profile(user: schemas.UserUpdateProfile, db: Session = Depends(get_db),
                       current_user: models.User = Depends(auth.get_current_user)):
     return auth.update_user_profile(db, current_user, user)
 
+
 @app.put("/users/me/password", tags=["Auth"])
 def change_my_password(password_data: schemas.ChangePassword, db: Session = Depends(get_db),
                        current_user: models.User = Depends(auth.get_current_user)):
     return auth.change_user_password(db, current_user, password_data.old_password, password_data.new_password)
+
 
 @app.put("/users/{user_id}/profile", response_model=schemas.UserOut, tags=["Users"])
 def update_profile(user_id: str, user: schemas.UserUpdateProfile, db: Session = Depends(get_db),
@@ -142,6 +148,7 @@ def update_profile(user_id: str, user: schemas.UserUpdateProfile, db: Session = 
 
     return auth.update_user_profile(db, db_user, user)
 
+
 @app.put("/users/{user_id}/password", tags=["Auth"])
 def change_user_password(user_id: str, password_data: schemas.ChangePassword, db: Session = Depends(get_db),
                          current_user: models.User = Depends(auth.get_current_admin_user)):
@@ -151,10 +158,12 @@ def change_user_password(user_id: str, password_data: schemas.ChangePassword, db
 
     return auth.change_user_password(db, db_user, password_data.old_password, password_data.new_password)
 
+
 @app.post("/conversations/", response_model=schemas.ConversationOut, tags=["Conversations"])
 def start_conversation(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     new_convo = conversations.create_new_conversation(db, user_id=str(current_user.user_id))
     return new_convo
+
 
 @app.get("/conversations/{conversation_id}/details", response_model=schemas.ConversationOut, tags=["Conversations"])
 def get_conversation_details(conversation_id: str, db: Session = Depends(get_db)):
@@ -162,6 +171,7 @@ def get_conversation_details(conversation_id: str, db: Session = Depends(get_db)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
+
 
 @app.get("/conversations/me", response_model=List[schemas.ConversationOut], tags=["Conversations"])
 def get_user_conversations(
@@ -174,10 +184,12 @@ def get_user_conversations(
 
     return user_conversations
 
+
 @app.delete("/conversations/{conversation_id}", tags=["Conversations"])
 def delete_conversation(conversation_id: str, db: Session = Depends(get_db),
                         current_user: models.User = Depends(auth.get_current_user)):
     return conversations.delete_conversation(db, conversation_id, user_id=str(current_user.user_id))
+
 
 @app.get("/conversations/{conversation_id}/messages", response_model=List[schemas.MessageOut], tags=["Conversations"])
 def get_conversation_messages(
@@ -198,13 +210,6 @@ def get_conversation_messages(
     ).order_by(models.Message.timestamp.asc()).all()
 
     return messages
-
-from pydantic import BaseModel
-
-
-class ContinueConversationRequest(BaseModel):
-    message: str
-    selected_documents: Optional[List[str]] = None
 
 
 @app.post("/conversations/{conversation_id}/continue", response_model=schemas.MessageOut, tags=["Conversations"])
@@ -236,12 +241,14 @@ def upload_documents(
         files=files
     )
 
+
 @app.get("/documents/{document_id}/details", response_model=schemas.DocumentOut, tags=["Documents"])
 def get_document_details(document_id: str, db: Session = Depends(get_db)):
     document = db.query(models.Document).filter(models.Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
     return document
+
 
 @app.get("/documents/me", response_model=List[schemas.DocumentOut], tags=["Documents"])
 def get_user_documents(
@@ -250,6 +257,7 @@ def get_user_documents(
 ):
     documents = conversations.list_user_documents(db, user_id=str(current_user.user_id))
     return documents
+
 
 @app.delete("/documents/{document_id}", tags=["Documents"])
 def delete_user_document(

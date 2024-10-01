@@ -1,8 +1,8 @@
+import secrets
 import uuid
 
-import os
-import secrets
 from sqlalchemy.orm import Session
+
 from .models import SecretKey
 
 ASSISTANT_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
@@ -22,6 +22,7 @@ def ensure_assistant_user_exists(db, User, UserRole):
         )
         db.add(new_user)
         db.commit()
+
 
 def get_or_create_secret_key(db: Session) -> str:
     secret_key = db.query(SecretKey).first()

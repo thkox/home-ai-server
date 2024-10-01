@@ -6,7 +6,6 @@ import time
 from typing import List, Optional
 from uuid import uuid4, UUID
 
-from sqlalchemy.orm.attributes import flag_modified
 from fastapi import HTTPException, UploadFile
 from langchain.prompts import PromptTemplate
 from langchain_chroma import Chroma
@@ -15,6 +14,7 @@ from langchain_community.llms.ollama import Ollama
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from .models import Conversation, Message, Document
 from .rag_processing import process_and_store_documents
@@ -110,6 +110,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
     ]
 
     return new_documents_details + existing_documents_details
+
 
 def delete_document(db: Session, document_id: str, user_id: str):
     """

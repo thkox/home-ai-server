@@ -8,11 +8,13 @@ from sqlalchemy.orm import relationship
 
 from .database import Base
 
+
 class SecretKey(Base):
     __tablename__ = "secret_keys"
 
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String, nullable=False)
+
 
 class UserRole(str, enum.Enum):
     admin = "admin"

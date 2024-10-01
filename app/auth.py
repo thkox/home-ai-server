@@ -96,6 +96,7 @@ def update_user_profile(db: Session, db_user: models.User, user: schemas.UserUpd
         role=db_user.role
     )
 
+
 def change_user_password(db: Session, db_user: models.User, old_password: str, new_password: str):
     if not verify_password(old_password, db_user.hashed_password):
         raise HTTPException(status_code=400, detail="Old password is incorrect")
