@@ -61,8 +61,6 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     try:
         payload = jwt.decode(token, get_or_create_secret_key(db), algorithms=[ALGORITHM])
         user_id: str = payload.get("user_id")
-        first_name: str = payload.get("first_name")
-        last_name: str = payload.get("last_name")
         if user_id is None:
             raise credentials_exception
         token_data = TokenData(user_id=user_id)
