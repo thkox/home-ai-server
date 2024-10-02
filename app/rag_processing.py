@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "./chroma_db")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-DOCUMENTS_DIRECTORY = "./documents"
+DOCUMENTS_DIRECTORY = os.getenv("DOCUMENTS_DIRECTORY", "./documents")
 
 
 def process_and_store_documents(documents: List[Document], user_id: str):

@@ -27,7 +27,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
 CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "./chroma_db")
-DOCUMENTS_DIRECTORY = "./documents"
+DOCUMENTS_DIRECTORY = os.getenv("DOCUMENTS_DIRECTORY", "./documents")
 
 ollama_client = Ollama(
     base_url=OLLAMA_URL,
