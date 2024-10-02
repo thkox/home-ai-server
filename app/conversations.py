@@ -1,43 +1,193 @@
-import os
+import datetime
+import hashlib
 import logging
-from fastapi import HTTPException
-from langchain_community.llms.ollama import Ollama
-from langchain_core.prompts.chat import PromptTemplate
-from langchain.chains import ConversationChain
-from langchain.memory import ConversationSummaryMemory
-from sqlalchemy.orm import Session
+import os
+import time
+from typing import List, Optional
+from uuid import uuid4, UUID
 
-from .models import Conversation, Message
+from fastapi import HTTPException, UploadFile
+from langchain.prompts import PromptTemplate
+from langchain_chroma import Chroma
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.llms.ollama import Ollama
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
+
+from .models import Conversation, Message, Document
+from .rag_processing import process_and_store_documents
 from .utils import ASSISTANT_UUID
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.getenv("OLLAMA_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
+CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "./chroma_db")
+DOCUMENTS_DIRECTORY = "./documents"
 
 ollama_client = Ollama(
     base_url=OLLAMA_URL,
     model=MODEL_NAME
 )
 
-TEMPLATE = """
-    You are Home AI. Your job is to assist house members with their daily tasks. Format answers with markdown.
 
-    Current conversation:
-    {history}
-    Human: {input}
-    AI:
-"""
+def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
+    """
+    Handles document uploads for a user, without requiring a conversation.
+    """
+    user_documents_dir = os.path.join(DOCUMENTS_DIRECTORY, user_id)
+    os.makedirs(user_documents_dir, exist_ok=True)
 
-PROMPT_TEMPLATE = PromptTemplate(input_variables=["history", "input"], template=TEMPLATE)
+    document_instances = []
+    existing_documents_details = []
+
+    for upload_file in files:
+        file_contents = upload_file.file.read()
+        checksum = hashlib.sha256(file_contents).hexdigest()
+
+        existing_document = db.query(Document).filter(
+            Document.user_id == user_id,
+            Document.checksum == checksum
+        ).first()
+
+        if existing_document:
+            logger.info(f"Document {upload_file.filename} already exists for user {user_id}. Skipping upload.")
+            existing_documents_details.append({
+                "id": str(existing_document.id),
+                "file_name": existing_document.file_name,
+                "upload_time": existing_document.upload_time.isoformat(),
+                "size": existing_document.size,
+                "checksum": existing_document.checksum
+            })
+            continue
+
+        # Generate the file name in the format {document_id}_{file_name}.{extension}
+        new_file_name = f"{uuid4()}_{upload_file.filename}"
+        file_path = os.path.join(user_documents_dir, new_file_name)
+
+        with open(file_path, 'wb') as f:
+            f.write(file_contents)
+
+        file_size_bytes = os.path.getsize(file_path)
+
+        new_document = Document(
+            user_id=user_id,
+            file_name=upload_file.filename,
+            file_path=file_path,
+            upload_time=datetime.datetime.now(datetime.timezone.utc),
+            size=file_size_bytes,  # Save size in bytes
+            checksum=checksum
+        )
+        db.add(new_document)
+        db.flush()
+
+        db.commit()
+        db.refresh(new_document)
+        document_instances.append(new_document)
+
+    if not document_instances and not existing_documents_details:
+        return {"message": "No new documents were uploaded."}
+
+    try:
+        process_and_store_documents(document_instances, user_id)
+    except Exception as e:
+        logger.error(f"Failed to process documents: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process documents.")
+
+    new_documents_details = [
+        {
+            "id": str(doc.id),
+            "file_name": doc.file_name,
+            "upload_time": doc.upload_time.isoformat(),
+            "size": doc.size,
+            "checksum": doc.checksum
+        }
+        for doc in document_instances
+    ]
+
+    return new_documents_details + existing_documents_details
+
+
+def delete_document(db: Session, document_id: str, user_id: str):
+    """
+    Deletes a document from storage and ChromaDB, and removes it from conversations.
+    """
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == user_id
+    ).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if os.path.exists(document.file_path):
+        os.remove(document.file_path)
+
+    embeddings = OllamaEmbeddings(
+        base_url=OLLAMA_URL,
+        model=EMBEDDING_MODEL_NAME
+    )
+    vectorstore = Chroma(
+        collection_name=user_id,
+        embedding_function=embeddings,
+        persist_directory=CHROMADB_PERSIST_DIRECTORY,
+    )
+
+    results = vectorstore._collection.get(
+        where={"document_id": document_id}
+    )
+    ids_to_delete = results['ids']
+
+    if ids_to_delete:
+        vectorstore.delete(ids=ids_to_delete)
+    else:
+        logger.warning(f"No embeddings found for document_id {document_id}")
+
+    conversations_to_update = db.query(Conversation).filter(
+        Conversation.user_id == user_id,
+        Conversation.selected_document_ids.any(UUID(document_id))
+    ).all()
+
+    for conversation in conversations_to_update:
+        conversation.selected_document_ids.remove(UUID(document_id))
+
+    db.delete(document)
+    db.commit()
+
+    return {"message": "Document deleted successfully."}
+
+
+def list_user_documents(db: Session, user_id: str):
+    documents = db.query(Document).filter(
+        Document.user_id == user_id
+    ).all()
+    return documents
+
 
 def create_ollama_client():
     return Ollama(
         base_url=OLLAMA_URL,
         model=MODEL_NAME
     )
+
+
+def get_conversation_messages(db: Session, conversation_id: str, user_id: str):
+    messages = db.query(Message).filter(
+        Message.conversation_id == conversation_id
+    ).order_by(Message.timestamp.asc()).all()
+
+    history = []
+    for msg in messages:
+        if str(msg.sender_id) == user_id:
+            history.append(HumanMessage(content=msg.content))
+        else:
+            history.append(AIMessage(content=msg.content))
+    return history
+
 
 def create_new_conversation(db: Session, user_id: str):
     """
@@ -49,20 +199,49 @@ def create_new_conversation(db: Session, user_id: str):
     db.refresh(new_conversation)
     return new_conversation
 
-def update_conversation_summary(db: Session, conversation: Conversation, memory):
-    """
-    Updates the conversation summary in the database based on the memory buffer.
-    """
-    try:
-        memory_summary = memory.buffer
-        conversation.summary = memory_summary
-        print(f"Updating conversation summary: {memory_summary}")
-        db.commit()
-    except Exception as e:
-        logger.error(f"Failed to update conversation summary: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update conversation summary.")
 
-def continue_conversation(db: Session, conversation_id: str, user_id: str, message_content: str):
+def generate_conversation_title(first_user_message: str, first_ai_response: str):
+    """
+    Generates a conversation title using the LLM
+    """
+    title_prompt_template = PromptTemplate(
+        template="Generate a short 3-4 word title with an emoji at the start of the title for a conversation based on the following messages. Print ONLY the title.\n"
+                 "User: {user_message}\n"
+                 "AI: {ai_response}\n"
+                 "Title:",
+        input_variables=["user_message", "ai_response"]
+    )
+    chain = title_prompt_template | ollama_client
+    title = chain.invoke({"user_message": first_user_message, "ai_response": first_ai_response})
+    # Ensure title is short
+    title = ' '.join(title.strip().split()[:4])
+    return title
+
+
+def invoke_chain(system_prompt: str, message_history: List[HumanMessage], message_content: str):
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            SystemMessage(content=system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+    chain = prompt | ollama_client
+    messages = message_history + [HumanMessage(content=message_content)]
+    try:
+        start_time = time.time()
+        ai_msg = chain.invoke({"messages": messages})
+        end_time = time.time()
+        response_text = ai_msg
+        response_time = end_time - start_time
+        tokens_generated = len(response_text.split())  # Approximate token count
+        return response_text, response_time, tokens_generated
+    except Exception as e:
+        logger.error(f"Failed to generate AI response: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate AI response.")
+
+
+def continue_conversation(db: Session, conversation_id: str, user_id: str, message_content: str,
+                          selected_documents: Optional[List[str]] = None):
     """
     Continues an active conversation, processes user input, and returns the AI's response.
     """
@@ -75,47 +254,102 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found or closed")
 
-    summary_llm = create_ollama_client()
+    if selected_documents:
+        try:
+            selected_document_uuids = [UUID(doc_id) for doc_id in selected_documents]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid document ID format")
 
-    # Load the summary into the memory buffer
-    memory = ConversationSummaryMemory(
-        llm=summary_llm,
-        buffer=conversation.summary or "",
-        return_messages=False,
-        max_token_limit=200  # Adjust token limit based on your model
+        user_documents = db.query(Document.id).filter(
+            Document.user_id == user_id,
+            Document.id.in_(selected_document_uuids)
+        ).all()
+
+        user_document_ids = [str(doc.id) for doc in user_documents]
+
+        invalid_document_ids = set(selected_documents) - set(user_document_ids)
+        if invalid_document_ids:
+            raise HTTPException(status_code=404, detail="One or more documents does not exist")
+
+        # Add new document IDs to the existing list without rewriting it
+        for doc_id in selected_document_uuids:
+            if doc_id not in conversation.selected_document_ids:
+                conversation.selected_document_ids.append(doc_id)
+
+        # Mark the attribute as modified
+        flag_modified(conversation, "selected_document_ids")
+
+        # Log the document IDs before committing
+        logger.info(f"Selected document UUIDs: {selected_document_uuids}")
+        logger.info(f"Conversation selected document IDs: {conversation.selected_document_ids}")
+
+        db.commit()
+    else:
+        selected_document_uuids = [str(doc_id) for doc_id in conversation.selected_document_ids]
+
+    embeddings = OllamaEmbeddings(
+        base_url=OLLAMA_URL,
+        model=EMBEDDING_MODEL_NAME
+    )
+    vectorstore = Chroma(
+        collection_name=user_id,
+        embedding_function=embeddings,
+        persist_directory=CHROMADB_PERSIST_DIRECTORY,
     )
 
-    conversation_chain = ConversationChain(
-        prompt=PROMPT_TEMPLATE,
-        llm=ollama_client,
-        memory=memory,
-        verbose=False
-    )
-
-    # Generate response
     try:
-        response = conversation_chain.invoke({"history": memory.buffer, "input": message_content})
-        response_text = response["response"]
+        if vectorstore._collection.count() == 0:
+            retriever = None
+        else:
+            if selected_document_uuids:
+                retriever = vectorstore.as_retriever(
+                    search_kwargs={"k": 3},
+                    where={"document_id": {"$in": selected_document_uuids}}
+                )
+            else:
+                retriever = None  # No documents selected
     except Exception as e:
-        logger.error(f"Failed to generate AI response: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate AI response.")
+        logger.error(f"Error accessing vector store: {e}")
+        retriever = None
 
-    # Save user and AI messages to the database
+    message_history = get_conversation_messages(db, conversation_id, user_id)
+
+    if retriever:
+        # Retrieve context
+        context_docs = retriever.get_relevant_documents(message_content)
+        context_content = "\n\n".join([doc.page_content for doc in context_docs])
+        # Prepare system prompt with context
+        system_prompt = f"""
+        You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
+        Use the following pieces of retrieved context to answer the question. If you don't know the answer, say that you don't know.
+    
+        Documents:
+        {context_content}
+        """
+    else:
+        # Prepare the system prompt
+        system_prompt = """
+        You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
+        """
+
+    response_text, response_time, tokens_generated = invoke_chain(system_prompt, message_history, message_content)
+
     try:
-        log_message_to_db(db, conversation_id, user_id, message_content, response_text)
+        llm_message = log_message_to_db(db, conversation_id, user_id, message_content, response_text, tokens_generated,
+                                        response_time)
     except Exception as e:
         logger.error(f"Failed to log conversation: {e}")
         raise HTTPException(status_code=500, detail="Failed to log conversation.")
 
-    # Update conversation summary
-    try:
-        update_conversation_summary(db, conversation, memory)
-    except Exception as e:
-        logger.error(f"Failed to update conversation summary: {e}")
+    if not conversation.title:
+        conversation.title = generate_conversation_title(message_content, response_text)
+        db.commit()
 
-    return {"llm_response": response_text}
+    return llm_message
 
-def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_message: str, ai_response: str):
+
+def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_message: str, ai_response: str,
+                      tokens_generated: int, response_time: float):
     """
     Logs user and AI messages to the database.
     """
@@ -124,7 +358,8 @@ def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_mess
         sender_id=user_id,
         content=user_message,
         llm_model=MODEL_NAME,
-        response_time=1.2
+        tokens_generated=0,
+        response_time=0,
     )
     db.add(new_message)
 
@@ -133,23 +368,31 @@ def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_mess
         sender_id=ASSISTANT_UUID,
         content=ai_response,
         llm_model=MODEL_NAME,
-        response_time=2.0
+        tokens_generated=tokens_generated,
+        response_time=response_time
     )
     db.add(llm_message)
     db.commit()
+    return llm_message
+
 
 def delete_conversation(db: Session, conversation_id: str, user_id: str):
     """
     Deletes a conversation from the database.
     """
     conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id, 
+        Conversation.id == conversation_id,
         Conversation.user_id == user_id
     ).first()
 
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    db.query(Message).filter(Message.conversation_id == conversation_id).delete()
+
+    conversation.selected_document_ids = []
+    db.commit()
+
     db.delete(conversation)
     db.commit()
-    return {"message": "Conversation deleted successfully"}
+    return {"message": "Conversation and related messages deleted successfully"}
