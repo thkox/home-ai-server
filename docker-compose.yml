@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  home-ai:
+    build:
+      context: .  # Build from the root directory
+      dockerfile: Dockerfile
+    image: home-ai:latest
+    container_name: home-ai
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_USERNAME=${DATABASE_USERNAME}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_NAME=${DATABASE_NAME}
+      - CHROMADB_PERSIST_DIRECTORY=${CHROMADB_PERSIST_DIRECTORY}
+      - DOCUMENTS_DIRECTORY=${DOCUMENTS_DIRECTORY}
+      - ALGORITHM=${ALGORITHM}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - MODEL_NAME=${MODEL_NAME}
+      - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME}
+      - PORT=${PORT}
+    volumes:
+      - ./data/chroma_db:${CHROMADB_PERSIST_DIRECTORY}
+      - ./data/documents:${DOCUMENTS_DIRECTORY}
+    env_file:
+      - .env

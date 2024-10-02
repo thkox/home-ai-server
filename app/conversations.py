@@ -23,11 +23,11 @@ from .utils import ASSISTANT_UUID
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL = os.getenv("OLLAMA_URL")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.4.141:11434")
 MODEL_NAME = os.getenv("MODEL_NAME")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
-CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "./chroma_db")
-DOCUMENTS_DIRECTORY = os.getenv("DOCUMENTS_DIRECTORY", "./documents")
+CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "app/chroma_db")
+DOCUMENTS_DIRECTORY = os.getenv("DOCUMENTS_DIRECTORY", "app/documents")
 
 ollama_client = Ollama(
     base_url=OLLAMA_URL,
