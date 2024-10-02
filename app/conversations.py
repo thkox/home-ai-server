@@ -3,19 +3,18 @@ import hashlib
 import logging
 import os
 import time
-import uuid
 from typing import List, Optional
+from uuid import uuid4, UUID
 
 from fastapi import HTTPException, UploadFile
-from langchain.chains import LLMChain, ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
-from langchain.schema import HumanMessage, AIMessage
+from langchain.prompts import PromptTemplate
 from langchain_chroma import Chroma
-from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.llms.ollama import Ollama
-from langchain_core.prompts.chat import PromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from .models import Conversation, Message, Document
 from .rag_processing import process_and_store_documents
@@ -23,8 +22,6 @@ from .utils import ASSISTANT_UUID
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
 
 OLLAMA_URL = os.getenv("OLLAMA_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
@@ -37,38 +34,6 @@ ollama_client = Ollama(
     model=MODEL_NAME
 )
 
-TEMPLATE = """
-You are Home AI. Your job is to assist house members with their daily tasks. You can speak multiple languages, but your native is English.
-Use the following documents, if they exist, to answer the question.
-
-Documents:
-{context}
-
-Current conversation:
-{chat_history}
-Human: {question}
-AI:
-"""
-
-PROMPT_TEMPLATE = PromptTemplate(
-    input_variables=["chat_history", "context", "question"],
-    template=TEMPLATE
-)
-
-SIMPLE_TEMPLATE = """
-You are Home AI. Your job is to assist house members with their daily tasks. You can speak multiple languages, but your native is English.
-
-Current conversation:
-{chat_history}
-Human: {input}
-AI:
-"""
-
-SIMPLE_PROMPT_TEMPLATE = PromptTemplate(
-    input_variables=["chat_history", "input"],
-    template=SIMPLE_TEMPLATE
-)
-
 
 def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
     """
@@ -78,6 +43,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
     os.makedirs(user_documents_dir, exist_ok=True)
 
     document_instances = []
+    existing_documents_details = []
 
     for upload_file in files:
         file_contents = upload_file.file.read()
@@ -90,24 +56,30 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
 
         if existing_document:
             logger.info(f"Document {upload_file.filename} already exists for user {user_id}. Skipping upload.")
+            existing_documents_details.append({
+                "id": str(existing_document.id),
+                "file_name": existing_document.file_name,
+                "upload_time": existing_document.upload_time.isoformat(),
+                "size": existing_document.size,
+                "checksum": existing_document.checksum
+            })
             continue
 
         # Generate the file name in the format {document_id}_{file_name}.{extension}
-        file_extension = os.path.splitext(upload_file.filename)[1]
-        new_file_name = f"{uuid.uuid4()}_{upload_file.filename}"
+        new_file_name = f"{uuid4()}_{upload_file.filename}"
         file_path = os.path.join(user_documents_dir, new_file_name)
 
         with open(file_path, 'wb') as f:
             f.write(file_contents)
 
-        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+        file_size_bytes = os.path.getsize(file_path)
 
         new_document = Document(
             user_id=user_id,
             file_name=upload_file.filename,
             file_path=file_path,
             upload_time=datetime.datetime.now(datetime.timezone.utc),
-            size=file_size_mb,
+            size=file_size_bytes,  # Save size in bytes
             checksum=checksum
         )
         db.add(new_document)
@@ -117,7 +89,7 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
         db.refresh(new_document)
         document_instances.append(new_document)
 
-    if not document_instances:
+    if not document_instances and not existing_documents_details:
         return {"message": "No new documents were uploaded."}
 
     try:
@@ -126,7 +98,18 @@ def upload_user_documents(db: Session, user_id: str, files: List[UploadFile]):
         logger.error(f"Failed to process documents: {e}")
         raise HTTPException(status_code=500, detail="Failed to process documents.")
 
-    return {"message": "Documents uploaded and processed successfully."}
+    new_documents_details = [
+        {
+            "id": str(doc.id),
+            "file_name": doc.file_name,
+            "upload_time": doc.upload_time.isoformat(),
+            "size": doc.size,
+            "checksum": doc.checksum
+        }
+        for doc in document_instances
+    ]
+
+    return new_documents_details + existing_documents_details
 
 
 def delete_document(db: Session, document_id: str, user_id: str):
@@ -166,11 +149,11 @@ def delete_document(db: Session, document_id: str, user_id: str):
 
     conversations_to_update = db.query(Conversation).filter(
         Conversation.user_id == user_id,
-        Conversation.selected_document_ids.any(uuid.UUID(document_id))
+        Conversation.selected_document_ids.any(UUID(document_id))
     ).all()
 
     for conversation in conversations_to_update:
-        conversation.selected_document_ids.remove(uuid.UUID(document_id))
+        conversation.selected_document_ids.remove(UUID(document_id))
 
     db.delete(document)
     db.commit()
@@ -221,18 +204,40 @@ def generate_conversation_title(first_user_message: str, first_ai_response: str)
     """
     Generates a conversation title using the LLM
     """
-    title_prompt = f"Generate a short 3-4 word title for a conversation based on the following messages. Print ONLY the title.\n" \
-                   f"User: {first_user_message}\n" \
-                   f"AI: {first_ai_response}\n" \
-                   f"Title:"
-    llm_chain = LLMChain(
-        llm=ollama_client,
-        prompt=PromptTemplate(template="{input}", input_variables=["input"])
+    title_prompt_template = PromptTemplate(
+        template="Generate a short 3-4 word title with an emoji at the start of the title for a conversation based on the following messages. Print ONLY the title.\n"
+                 "User: {user_message}\n"
+                 "AI: {ai_response}\n"
+                 "Title:",
+        input_variables=["user_message", "ai_response"]
     )
-    title = llm_chain.predict(input=title_prompt)
+    chain = title_prompt_template | ollama_client
+    title = chain.invoke({"user_message": first_user_message, "ai_response": first_ai_response})
     # Ensure title is short
     title = ' '.join(title.strip().split()[:4])
     return title
+
+
+def invoke_chain(system_prompt: str, message_history: List[HumanMessage], message_content: str):
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            SystemMessage(content=system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+    chain = prompt | ollama_client
+    messages = message_history + [HumanMessage(content=message_content)]
+    try:
+        start_time = time.time()
+        ai_msg = chain.invoke({"messages": messages})
+        end_time = time.time()
+        response_text = ai_msg
+        response_time = end_time - start_time
+        tokens_generated = len(response_text.split())  # Approximate token count
+        return response_text, response_time, tokens_generated
+    except Exception as e:
+        logger.error(f"Failed to generate AI response: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate AI response.")
 
 
 def continue_conversation(db: Session, conversation_id: str, user_id: str, message_content: str,
@@ -250,20 +255,37 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         raise HTTPException(status_code=404, detail="Conversation not found or closed")
 
     if selected_documents:
+        try:
+            selected_document_uuids = [UUID(doc_id) for doc_id in selected_documents]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid document ID format")
+
         user_documents = db.query(Document.id).filter(
             Document.user_id == user_id,
-            Document.id.in_(selected_documents)
+            Document.id.in_(selected_document_uuids)
         ).all()
+
         user_document_ids = [str(doc.id) for doc in user_documents]
 
         invalid_document_ids = set(selected_documents) - set(user_document_ids)
         if invalid_document_ids:
-            raise HTTPException(status_code=400, detail=f"Invalid document_ids: {invalid_document_ids}")
+            raise HTTPException(status_code=404, detail="One or more documents does not exist")
 
-        conversation.selected_document_ids = [uuid.UUID(doc_id) for doc_id in selected_documents]
+        # Add new document IDs to the existing list without rewriting it
+        for doc_id in selected_document_uuids:
+            if doc_id not in conversation.selected_document_ids:
+                conversation.selected_document_ids.append(doc_id)
+
+        # Mark the attribute as modified
+        flag_modified(conversation, "selected_document_ids")
+
+        # Log the document IDs before committing
+        logger.info(f"Selected document UUIDs: {selected_document_uuids}")
+        logger.info(f"Conversation selected document IDs: {conversation.selected_document_ids}")
+
         db.commit()
     else:
-        selected_documents = [str(doc_id) for doc_id in conversation.selected_document_ids]
+        selected_document_uuids = [str(doc_id) for doc_id in conversation.selected_document_ids]
 
     embeddings = OllamaEmbeddings(
         base_url=OLLAMA_URL,
@@ -279,10 +301,10 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         if vectorstore._collection.count() == 0:
             retriever = None
         else:
-            if selected_documents:
+            if selected_document_uuids:
                 retriever = vectorstore.as_retriever(
                     search_kwargs={"k": 3},
-                    where={"document_id": {"$in": selected_documents}}
+                    where={"document_id": {"$in": selected_document_uuids}}
                 )
             else:
                 retriever = None  # No documents selected
@@ -291,45 +313,30 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         retriever = None
 
     message_history = get_conversation_messages(db, conversation_id, user_id)
-    chat_history = ChatMessageHistory(messages=message_history)
-
-    memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        return_messages=True,
-        chat_memory=chat_history
-    )
 
     if retriever:
-        conversation_chain = ConversationalRetrievalChain.from_llm(
-            llm=ollama_client,
-            retriever=retriever,
-            memory=memory,
-            verbose=False,
-            combine_docs_chain_kwargs={'prompt': PROMPT_TEMPLATE}
-        )
+        # Retrieve context
+        context_docs = retriever.get_relevant_documents(message_content)
+        context_content = "\n\n".join([doc.page_content for doc in context_docs])
+        # Prepare system prompt with context
+        system_prompt = f"""
+        You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
+        Use the following pieces of retrieved context to answer the question. If you don't know the answer, say that you don't know.
+    
+        Documents:
+        {context_content}
+        """
     else:
-        conversation_chain = LLMChain(
-            llm=ollama_client,
-            prompt=SIMPLE_PROMPT_TEMPLATE,
-            memory=memory,
-            verbose=False
-        )
+        # Prepare the system prompt
+        system_prompt = """
+        You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
+        """
+
+    response_text, response_time, tokens_generated = invoke_chain(system_prompt, message_history, message_content)
 
     try:
-        start_time = time.time()
-        if retriever:
-            response_text = conversation_chain.run(question=message_content)
-        else:
-            response_text = conversation_chain.predict(input=message_content)
-        end_time = time.time()
-        response_time = end_time - start_time
-        tokens_generated = len(response_text.split())  # Approximate token count
-    except Exception as e:
-        logger.error(f"Failed to generate AI response: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate AI response.")
-
-    try:
-        log_message_to_db(db, conversation_id, user_id, message_content, response_text, tokens_generated, response_time)
+        llm_message = log_message_to_db(db, conversation_id, user_id, message_content, response_text, tokens_generated,
+                                        response_time)
     except Exception as e:
         logger.error(f"Failed to log conversation: {e}")
         raise HTTPException(status_code=500, detail="Failed to log conversation.")
@@ -338,7 +345,7 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         conversation.title = generate_conversation_title(message_content, response_text)
         db.commit()
 
-    return {"llm_response": response_text}
+    return llm_message
 
 
 def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_message: str, ai_response: str,
@@ -366,6 +373,7 @@ def log_message_to_db(db: Session, conversation_id: str, user_id: str, user_mess
     )
     db.add(llm_message)
     db.commit()
+    return llm_message
 
 
 def delete_conversation(db: Session, conversation_id: str, user_id: str):

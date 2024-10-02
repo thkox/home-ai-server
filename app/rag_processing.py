@@ -54,7 +54,7 @@ def process_and_store_documents(documents: List[Document], user_id: str):
 
             loaded_documents = loader.load()
 
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=200)
             docs = text_splitter.split_documents(loaded_documents)
 
             vectorstore.add_documents(docs, metadata={
