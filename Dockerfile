@@ -33,5 +33,8 @@ EXPOSE ${PORT}
 # Create directories for data storage
 RUN mkdir -p ${CHROMADB_PERSIST_DIRECTORY} ${DOCUMENTS_DIRECTORY}
 
+# Set the PYTHONPATH to include the /app directory
+ENV PYTHONPATH=/app
+
 # Set the command to run the app and print the IP and port
 CMD ["sh", "-c", "echo 'App running at http://$(hostname -i):${PORT}' && uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

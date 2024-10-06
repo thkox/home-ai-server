@@ -10,3 +10,5 @@ pydantic==2.9.2
 python-dotenv==1.0.1
 python_jose==3.3.0
 SQLAlchemy==2.0.34
+pypdf==5.0.0
+unstructured==0.15.10
