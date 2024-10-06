@@ -25,6 +25,9 @@ DOCUMENTS_DIRECTORY = os.getenv("DOCUMENTS_DIRECTORY", "app/documents")
 
 
 def process_and_store_documents(documents: List[Document], user_id: str):
+    """
+    Process and store documents in the Chroma database for a given user.
+    """
     embeddings = OllamaEmbeddings(
         base_url=OLLAMA_URL,
         model=EMBEDDING_MODEL_NAME

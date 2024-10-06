@@ -9,6 +9,9 @@ ASSISTANT_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
 
 def ensure_assistant_user_exists(db, User, UserRole):
+    """
+    Ensure that the assistant user exists in the database.
+    """
     assistant_user = db.query(User).filter(User.user_id == ASSISTANT_UUID).first()
     if not assistant_user:
         new_user = User(
@@ -25,6 +28,9 @@ def ensure_assistant_user_exists(db, User, UserRole):
 
 
 def get_or_create_secret_key(db: Session) -> str:
+    """
+    Get or create a secret key for encoding and decoding JWT tokens.
+    """
     secret_key = db.query(SecretKey).first()
     if not secret_key:
         new_key = secrets.token_urlsafe(64)
