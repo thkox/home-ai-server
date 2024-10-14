@@ -93,8 +93,14 @@
 The server uses PostgreSQL to store user profiles, conversations, and document metadata. Here's an overview of the main tables:
 
 - **Users**: Stores user profiles and credentials.
-- **Conversations**: Stores the conversation history of each user.
+- **Conversations**: Stores the conversation properties of each user.
+- **Messages**: Stores the conversation history of each user.
 - **Documents**: Stores metadata of uploaded documents.
+- **Secret Keys**: Stores the secret key for the JWT tokens.
+
+<p align="center">
+  <img src="./images/database_schema.png" alt="database schema">
+</p>
 
 ## Future Enhancements
 
