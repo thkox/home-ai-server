@@ -1,0 +1,15 @@
+fastapi==0.115.0
+fastapi[standard]==0.115.0
+langchain==0.3.1
+langchain_chroma==0.1.4
+langchain_community==0.3.1
+langchain_core==0.3.7
+passlib==1.7.4
+psycopg2_binary==2.9.9
+pydantic==2.9.2
+python-dotenv==1.0.1
+python_jose==3.3.0
+SQLAlchemy==2.0.34
+pypdf==5.0.0
+unstructured==0.15.10
+python-docx==1.1.2

@@ -23,11 +23,11 @@ from .utils import ASSISTANT_UUID
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL = os.getenv("OLLAMA_URL")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.4.141:11434")
 MODEL_NAME = os.getenv("MODEL_NAME")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
-CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "./chroma_db")
-DOCUMENTS_DIRECTORY = "./documents"
+CHROMADB_PERSIST_DIRECTORY = os.getenv("CHROMADB_PERSIST_DIRECTORY", "app/chroma_db")
+DOCUMENTS_DIRECTORY = os.getenv("DOCUMENTS_DIRECTORY", "app/documents")
 
 ollama_client = Ollama(
     base_url=OLLAMA_URL,
@@ -162,6 +162,9 @@ def delete_document(db: Session, document_id: str, user_id: str):
 
 
 def list_user_documents(db: Session, user_id: str):
+    """
+    Lists all documents uploaded by a user.
+    """
     documents = db.query(Document).filter(
         Document.user_id == user_id
     ).all()
@@ -176,6 +179,9 @@ def create_ollama_client():
 
 
 def get_conversation_messages(db: Session, conversation_id: str, user_id: str):
+    """
+    Retrieves all messages in a conversation
+    """
     messages = db.query(Message).filter(
         Message.conversation_id == conversation_id
     ).order_by(Message.timestamp.asc()).all()
@@ -219,6 +225,9 @@ def generate_conversation_title(first_user_message: str, first_ai_response: str)
 
 
 def invoke_chain(system_prompt: str, message_history: List[HumanMessage], message_content: str):
+    """
+    Invokes the LLM chain to generate an AI response.
+    """
     prompt = ChatPromptTemplate.from_messages(
         [
             SystemMessage(content=system_prompt),
@@ -279,10 +288,6 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         # Mark the attribute as modified
         flag_modified(conversation, "selected_document_ids")
 
-        # Log the document IDs before committing
-        logger.info(f"Selected document UUIDs: {selected_document_uuids}")
-        logger.info(f"Conversation selected document IDs: {conversation.selected_document_ids}")
-
         db.commit()
     else:
         selected_document_uuids = [str(doc_id) for doc_id in conversation.selected_document_ids]
@@ -315,10 +320,8 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
     message_history = get_conversation_messages(db, conversation_id, user_id)
 
     if retriever:
-        # Retrieve context
         context_docs = retriever.get_relevant_documents(message_content)
         context_content = "\n\n".join([doc.page_content for doc in context_docs])
-        # Prepare system prompt with context
         system_prompt = f"""
         You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
         Use the following pieces of retrieved context to answer the question. If you don't know the answer, say that you don't know.
@@ -327,7 +330,6 @@ def continue_conversation(db: Session, conversation_id: str, user_id: str, messa
         {context_content}
         """
     else:
-        # Prepare the system prompt
         system_prompt = """
         You are Home AI assistant. Your job is to assist house members for question-answering tasks. Your native language is English, but you can speak other languages too.
         """
