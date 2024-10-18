@@ -4,7 +4,7 @@
   <img src="./images/app_logo-cropped.png" alt="app logo" width="150" height="150">
 </p>
 
-**Home AI Server** provides the backend infrastructure for the Home AI system. It manages user data, conversations, and the interaction with Large Language Models (LLMs). The server runs locally, ensuring that all user data stays within the local network for maximum privacy.
+**Home AI Server** provides the backend infrastructure for the [Home AI](https://github.com/thkox/home-ai-client/) system. It manages user data, conversations, and the interaction with Large Language Models (LLMs). The server runs locally, ensuring that all user data stays within the local network for maximum privacy.
 
 ## Features
 
