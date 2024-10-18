@@ -112,3 +112,7 @@ The server uses PostgreSQL to store user profiles, conversations, and document m
 
 - **Server not starting**: Check the logs with `docker-compose logs`.
 - **Database connection issues**: Ensure PostgreSQL is running and correctly configured in the `.env` file.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
